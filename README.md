@@ -18,6 +18,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 ## Supported environments
 - macOS 11+ (Intel or Apple Silicon).
 - Windows 10+ (64-bit Intel/AMD).
+- Tested with Chemotion ELN v3.1.2. Other versions may work but have not been verified.
 
 ## Setup
 - **Standalone app:** Ready to use without installing Python.
