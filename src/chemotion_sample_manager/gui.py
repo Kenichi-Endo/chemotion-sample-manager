@@ -1815,7 +1815,10 @@ class SampleManager(tk.Tk):
         self.horizontal_scrollbar.set(first, last)
         self.reposition_active_editor()
     def place_editor(self, editor, item_id, column):
-        editor.configure(font=self.sample_list_font)
+        value = tk.StringVar(master=editor, value=editor.get())
+        editor.configure(font=self.sample_list_font, width=1, textvariable=value)
+        resize = value.trace_add("write", lambda *_: self.reposition_active_editor(editor))
+        editor.bind("<Destroy>", lambda _event: value.trace_remove("write", resize))
         self.editing_cell = (item_id, column)
         self.reposition_active_editor(editor)
     def reposition_active_editor(self, editor=None):
@@ -1828,6 +1831,15 @@ class SampleManager(tk.Tk):
             editor.place_forget()
             return
         x, y, width, height = box
+        viewport_width = self.tree.winfo_width()
+        if x + width <= 0 or x >= viewport_width:
+            editor.place_forget()
+            return
+        # The one-character requested width includes the theme's padding and
+        # the location dropdown arrow, and leaves room for the insertion cursor.
+        text_width = self.sample_list_font.measure(editor.get()) + editor.winfo_reqwidth()
+        width = min(viewport_width, max(width, text_width))
+        x = max(0, min(x, viewport_width - width))
         editor.place(x=x, y=y, width=width, height=height)
         editor.lift()
     def selected_edit_rows(self, fallback):
