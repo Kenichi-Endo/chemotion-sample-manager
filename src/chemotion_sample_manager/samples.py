@@ -59,6 +59,8 @@ def collection_picker_label(collection):
     """Build the collection selector label, including a sync collection's source."""
     label = shown(collection.get("label"))
     if not collection.get("_synchronized"):
+        if label == "All" and collection.get("is_locked"):
+            return "All (own)"
         return label
     source = synchronized_collection_source(collection)
     return f"({source}) {label}" if source else f"(Synchronized) {label}"
