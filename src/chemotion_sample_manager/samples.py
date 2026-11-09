@@ -6,8 +6,8 @@ from urllib.parse import quote
 from urllib.parse import urlsplit
 
 
-INVENTORY_KEYS = ("label", "location", "structure", "molecule", "density", "sample", "vendor", "amount", "last_modified", "created", "decoupled", "inventory_sample")
-INVENTORY_HEADINGS = ("Short label", "Location", "Structure", "Molecule name", "Density", "Sample name", "Vendor", "Amount", "Last modified", "Created", "Decoupled", "Inventory")
+INVENTORY_KEYS = ("label", "collection", "location", "structure", "molecule", "density", "sample", "vendor", "amount", "last_modified", "created", "decoupled", "inventory_sample")
+INVENTORY_HEADINGS = ("Short label", "Collection", "Location", "Structure", "Molecule name", "Density", "Sample name", "Vendor", "Amount", "Last modified", "Created", "Decoupled", "Inventory")
 
 PRINT_CHECKLIST_KEYS = ("correct", "incorrect")
 
@@ -311,8 +311,16 @@ def refresh_inventory_row(client, row, require_amount=False):
     )
     if require_amount and refreshed.get("amount_value") is None:
         raise ConnectionError("Chemotion did not retain the amount update.")
+    replace_inventory_row(row, refreshed)
+
+
+def replace_inventory_row(row, refreshed):
+    """Keep collection membership discovered by the inventory listing."""
+    collection = row.get("collection")
     row.clear()
     row.update(refreshed)
+    if collection is not None:
+        row.setdefault("collection", collection)
 
 
 def rows_for_location_filter(rows, location, retained_row_ids=()):

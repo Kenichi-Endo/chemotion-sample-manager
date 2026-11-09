@@ -254,11 +254,27 @@ class ChemotionClient:
 
         check_cancelled()
         selected = collections if collections is not None else [{"id": collection_id, "_synchronized": synchronized}]
+
+        def collection_name(item):
+            label = item.get("label") or item.get("name")
+            if label == "All" and item.get("is_locked") and not item.get("_synchronized"):
+                return None
+            return label
+
+        collection_labels = [collection_name(item) for item in selected]
         collection_word = "collection" if len(selected) == 1 else "collections"
         if progress: progress(f"Retrieving {collection_word}: 0 of {len(selected)}…")
         self.login(); check_cancelled(); samples = []
         sample_contexts = {}
+        # The listing thread replaces immutable tuples so workers can read a
+        # snapshot while more collection pages are still arriving.
+        sample_collection_names = {}
         list_worker_state = threading.local()
+
+        def set_collection_display(row):
+            names = sample_collection_names.get(row["id"], ())
+            if names:
+                row["collection"] = ", ".join(sorted(names, key=str.casefold))
 
         def retrieve_page(collection, page):
             check_cancelled()
@@ -275,7 +291,7 @@ class ChemotionClient:
                 elements = ElementSet(client.connection, {"name": "sample", "is_generic": False},
                                       context_id, collection_is_sync=context_sync)
                 elements.load_elements(per_page=100)
-                return [sample.json_data for sample in list.__iter__(elements)], elements.max_page
+                return [sample.json_data for sample in list.__iter__(elements)], max(1, elements.max_page)
             payload = {"page": page, "per_page": 100, "filter_created_at": False,
                        "product_only": False, "el_type": "sample",
                        "sync_collection_id" if context_sync else "collection_id": context_id}
@@ -324,11 +340,17 @@ class ChemotionClient:
                     ready_batches = []
                     while (next_collection, next_page) in page_samples:
                         collection = selected[next_collection]
+                        label = collection_labels[next_collection]
                         batch = []
                         for sample in page_samples.pop((next_collection, next_page)):
-                            if sample["id"] not in sample_contexts:
-                                sample_contexts[sample["id"]] = (collection["id"], bool(collection.get("_synchronized")))
+                            sample_id = sample["id"]
+                            if sample_id not in sample_contexts:
+                                sample_contexts[sample_id] = (collection["id"], bool(collection.get("_synchronized")))
                                 batch.append(sample)
+                            if label:
+                                names = sample_collection_names.get(sample_id, ())
+                                if label not in names:
+                                    sample_collection_names[sample_id] = (*names, label)
                         discovered_count += len(batch)
                         if batch:
                             ready_batches.append(batch)
@@ -364,6 +386,7 @@ class ChemotionClient:
             sample_collection_id, sample_synchronized = sample_contexts[sample["id"]]
             row = client.inventory_entry(sample["id"], sample_collection_id, sample_synchronized,
                                          sample, sample_details.get(sample["id"]))
+            set_collection_display(row)
             row["_inventory_position"] = positions[sample["id"]]
             # Retain retrieved details even if Stop interrupts thumbnail display.
             rows[positions[sample["id"]]] = row
@@ -445,6 +468,10 @@ class ChemotionClient:
                     rows_loaded(batch_rows)
                 if cancelled and cancelled.is_set():
                     raise InventoryLoadCancelled([row for row in rows if row is not None])
+        except InventoryLoadCancelled as interrupted:
+            for row in interrupted.rows:
+                set_collection_display(row)
+            raise
         finally:
             stopped.set()
             executor.shutdown(wait=not (cancelled and cancelled.is_set()), cancel_futures=True)
@@ -454,6 +481,7 @@ class ChemotionClient:
         samples.sort(key=lambda sample: natural_sort_value(shown(sample.get("short_label"))), reverse=newest_first)
         ordered_rows = [rows[positions[sample["id"]]] for sample in samples]
         for position, row in enumerate(ordered_rows):
+            set_collection_display(row)
             row["_inventory_position"] = position
         return ordered_rows
     def sample_details(self, sample_ids, collection_id, synchronized=False):

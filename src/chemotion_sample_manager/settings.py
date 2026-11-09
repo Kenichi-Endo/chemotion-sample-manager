@@ -71,7 +71,10 @@ def column_order(saved_order, all_columns):
     ordered = tuple(dict.fromkeys(key for key in saved_order if key in all_columns))
     for key in all_columns:
         if key not in ordered:
-            if key in {"density", "structure"} and "molecule" in ordered:
+            if key == "collection" and "location" in ordered:
+                position = ordered.index("location")
+                ordered = ordered[:position] + (key,) + ordered[position:]
+            elif key in {"density", "structure"} and "molecule" in ordered:
                 position = ordered.index("molecule") + 1
                 if key == "structure":
                     position -= 1

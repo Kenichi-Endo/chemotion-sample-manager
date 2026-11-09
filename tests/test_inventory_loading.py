@@ -216,7 +216,7 @@ def test_collections_overlap_and_preserve_first_selected_context(monkeypatch, st
         def __init__(self, connection, klass, collection_id, collection_is_sync):
             self.connection = connection
             self.collection_id = collection_id
-            self.max_page = 1
+            self.max_page = 0 if collection_id == 44 else 1
             assert collection_is_sync == (collection_id == 43)
 
         def load_elements(self, per_page):
@@ -232,8 +232,9 @@ def test_collections_overlap_and_preserve_first_selected_context(monkeypatch, st
                     barrier.wait(timeout=3)
                     if stop:
                         cancelled.set()
+                numbers = () if self.collection_id == 44 else (1, self.collection_id)
                 self.extend(SimpleNamespace(json_data={"id": number, "short_label": f"S{number}"})
-                            for number in (1, self.collection_id))
+                            for number in numbers)
             finally:
                 with lock:
                     active -= 1
@@ -242,16 +243,23 @@ def test_collections_overlap_and_preserve_first_selected_context(monkeypatch, st
     monkeypatch.setattr(api_client.ChemotionClient, "inventory_entry",
                         lambda self, sample_id, context_id, context_sync, *args:
                         {"id": sample_id, "context": (context_id, context_sync)})
-    collections = [{"id": number, "_synchronized": number == 43} for number in range(42, 48)]
+    collections = [
+        {"id": number, "label": label, "is_locked": number == 42, "_synchronized": number == 43}
+        for number, label in enumerate(("All", "Standards", "Empty", "Catalysts", "Catalysts", "Project E"), 42)
+    ]
     if stop:
         with pytest.raises(api_client.InventoryLoadCancelled):
             client.inventory(42, collections=collections, cancelled=cancelled)
         assert sorted(started) == [42, 43]
     else:
         rows = client.inventory(42, collections=collections)
-        assert [row["id"] for row in rows] == [47, 46, 45, 44, 43, 42, 1]
+        assert [row["id"] for row in rows] == [47, 46, 45, 43, 42, 1]
         assert rows[-1]["context"] == (42, False)
-        assert next(row for row in rows if row["id"] == 43)["context"] == (43, True)
+        assert rows[-1]["collection"] == "Catalysts, Project E, Standards"
+        shared_row = next(row for row in rows if row["id"] == 43)
+        assert shared_row["context"] == (43, True)
+        assert shared_row["collection"] == "Standards"
+        assert "collection" not in next(row for row in rows if row["id"] == 42)
         assert sorted(started) == list(range(42, 48))
     assert maximum == 2
     assert connections[0] is not connections[1]

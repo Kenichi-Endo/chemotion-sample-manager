@@ -42,6 +42,7 @@ from .samples import (
     natural_sort_value,
     parse_amount,
     refresh_inventory_row,
+    replace_inventory_row,
     rows_for_location_filter,
     shown,
     structure_image_request_path,
@@ -482,11 +483,11 @@ class ColumnDragFeedback:
 class SampleManager(tk.Tk):
     headings = INVENTORY_HEADINGS
     keys = INVENTORY_KEYS
-    column_menu_order = ("structure", "inventory_sample", "label", "location", "decoupled", "molecule", "density", "sample", "vendor", "amount", "last_modified", "created")
-    default_column_order = ("structure", "inventory_sample", "label", "location", "decoupled", "molecule", "density", "sample", "vendor", "amount", "last_modified", "created")
+    column_menu_order = ("structure", "inventory_sample", "label", "collection", "location", "decoupled", "molecule", "density", "sample", "vendor", "amount", "last_modified", "created")
+    default_column_order = ("structure", "inventory_sample", "label", "collection", "location", "decoupled", "molecule", "density", "sample", "vendor", "amount", "last_modified", "created")
     default_visible_columns = tuple(key for key in default_column_order if key not in {"decoupled", "created"})
-    column_widths = {"label":120,"structure":85,"molecule":250,"density":100,"sample":200,"vendor":135,"amount":100,"location":260,"last_modified":145,"created":145,"decoupled":95,"inventory_sample":85}
-    column_min_widths = {"label":85,"structure":70,"molecule":120,"density":70,"sample":110,"vendor":90,"amount":70,"location":120,"last_modified":105,"created":105,"decoupled":70,"inventory_sample":70}
+    column_widths = {"label":120,"structure":85,"molecule":250,"density":100,"sample":200,"vendor":135,"amount":100,"collection":160,"location":260,"last_modified":145,"created":145,"decoupled":95,"inventory_sample":85}
+    column_min_widths = {"label":85,"structure":70,"molecule":120,"density":70,"sample":110,"vendor":90,"amount":70,"collection":90,"location":120,"last_modified":105,"created":105,"decoupled":70,"inventory_sample":70}
     palettes = {False: {"base":"#f4f7f6","panel":"#ffffff","text":"#17211f","muted":"#52616c","accent":"#08756a","error":"#b42318"}, True: {"base":"#1c1c1e","panel":"#2c2c2e","text":"#f2f2f7","muted":"#aeaeb2","accent":"#41c7b3","error":"#ff6961"}}
     def __init__(self):
         launch_display = None
@@ -499,8 +500,14 @@ class SampleManager(tk.Tk):
         super().__init__(); self.title(APP_NAME); self.minsize(1050, 620); self.rows = []; self.selected_row_ids = set(); self.location_filter_retained_row_ids = set(); self.sort_key = "label"; self.sort_reverse = False; self.location_filter = tk.StringVar(value="All locations"); self.collection_value = tk.StringVar(value="Choose collection…"); self.collection_choices = {}; self.logged_in = False; self.profile_settings = saved_profile_settings(); saved_server = self.profile_settings.get("chemotion_server", DEFAULT_CHEMOTION_URL); self.server_value = tk.StringVar(value=saved_server if isinstance(saved_server, str) else DEFAULT_CHEMOTION_URL); self.username_value = tk.StringVar(value=username); self.password_value = tk.StringVar(value=password); self.remember_credentials = tk.BooleanVar(value=True); self.amount_editor = None; self.editing_cell = None; self.edit_after_save = None; self.editing_rows = []; self.inventory_cancel_event = None; self.inventory_loading = False
         try: client.CHEMOTION_URL = normalized_chemotion_url(self.server_value.get())
         except ValueError: self.server_value.set(DEFAULT_CHEMOTION_URL); client.CHEMOTION_URL = DEFAULT_CHEMOTION_URL
-        self.column_order = column_order(self.profile_settings.get("column_order"), self.default_column_order)
+        saved_order = self.profile_settings.get("column_order")
+        self.column_order = column_order(saved_order, self.default_column_order)
         selected_columns = visible_columns(self.profile_settings.get("visible_columns", self.default_visible_columns), self.column_order)
+        if not isinstance(saved_order, (list, tuple)) or "collection" not in saved_order:
+            if "collection" not in selected_columns:
+                selected_columns += ("collection",)
+            self.profile_settings["column_order"] = list(self.column_order)
+            self.profile_settings["visible_columns"] = list(selected_columns)
         self.column_visibility = {key: tk.BooleanVar(value=key in selected_columns) for key in self.keys}
         self.server_value.trace_add("write", self.connection_details_changed); self.username_value.trace_add("write", self.connection_details_changed); self.password_value.trace_add("write", self.connection_details_changed)
         icon_path = os.environ.get("CHEMOTION_SAMPLE_MANAGER_ICON")
@@ -1298,7 +1305,7 @@ class SampleManager(tk.Tk):
                 return natural_sort_value(item[key])
             if key in {"last_modified", "created"}:
                 return last_modified_sort_value(item.get(f"{key}_at"))
-            return str(item[key]).casefold()
+            return str(item.get(key, "")).casefold()
         rows = self.filtered_rows()
         if getattr(self, "inventory_loading", False) and any("_inventory_position" in row for row in self.rows):
             # Concurrent details and thumbnails can finish in any order. Only
@@ -1353,7 +1360,7 @@ class SampleManager(tk.Tk):
         # Treeview fonts apply to an entire row, not an individual column.  Keep
         # inventory numbers in the native table font instead of substituting
         # Unicode mathematical "bold" digits, which macOS renders in another face.
-        return (str(row["label"]), row["location"], displayed_row_value(row, "structure"), row["molecule"], displayed_row_value(row, "density"), row["sample"], row["vendor"], row["amount"], displayed_row_value(row, "last_modified"), displayed_row_value(row, "created"), checkbox(row["decoupled"]), checkbox(row["inventory_sample"]))
+        return (str(row["label"]), displayed_row_value(row, "collection"), row["location"], displayed_row_value(row, "structure"), row["molecule"], displayed_row_value(row, "density"), row["sample"], row["vendor"], row["amount"], displayed_row_value(row, "last_modified"), displayed_row_value(row, "created"), checkbox(row["decoupled"]), checkbox(row["inventory_sample"]))
     def load_structure_images(self, rows):
         """Queue missing structures with at most eight image workers."""
         with self.structure_image_queue_lock:
@@ -1753,7 +1760,7 @@ class SampleManager(tk.Tk):
                     failures.append((row, str(error)))
                 else:
                     refreshed = client.inventory_entry(row["id"], row.get("collection_id"), row.get("synchronized", False))
-                    row.clear(); row.update(refreshed)
+                    replace_inventory_row(row, refreshed)
             self.after(0, self._flags_changed, selected_rows, field, value, label, failures)
         except Exception as error:
             self.after(0, self._flags_change_failed, label, str(error))
@@ -1995,7 +2002,7 @@ class SampleManager(tk.Tk):
         """Replace an edited row with Chemotion's authoritative current record."""
         selected_ids = set(self.selected_row_ids)
         selected_ids.add(str(row["id"]))
-        row.clear(); row.update(refreshed)
+        replace_inventory_row(row, refreshed)
         self.render_rows(preserve_display_order=True)
         visible_ids = set(self.tree.get_children())
         selected_ids.intersection_update(visible_ids)
