@@ -49,19 +49,45 @@ def test_drop_marker_uses_a_visible_row():
     assert app.column_drop_marker_x(tree, SimpleNamespace(x=130, y=10)) == 81
 
 
-@pytest.mark.parametrize("scroll, expected", [(0, 101), (0.2, 41)])
-def test_empty_table_drop_marker_uses_column_edge(scroll, expected):
+@pytest.mark.parametrize("show, scroll, expected", [
+    (("headings",), 0, 101),
+    (("headings",), 0.2, 41),
+    (("tree", "headings"), 0, 186),
+    (("tree", "headings"), 0.2, 109),
+])
+def test_empty_table_drop_marker_uses_column_edge(show, scroll, expected):
     tree = SimpleNamespace(
         identify_column=lambda x: "#2",
         winfo_height=lambda: 100,
         winfo_width=lambda: 200,
         identify_row=lambda y: "",
-        cget=lambda option: ("label", "location"),
-        column=lambda column, option: {"#1": 100, "#2": 200}[column],
+        cget={"displaycolumns": ("label", "location"), "show": show}.__getitem__,
+        tk=SimpleNamespace(splitlist=tuple),
+        column=lambda column, option: {"#0": 85, "#1": 100, "#2": 200}[column],
         identify_region=lambda x, y: "heading" if x >= 1 else "nothing",
         xview=lambda: (scroll, 1),
     )
     assert app.column_drop_marker_x(tree, SimpleNamespace(x=130, y=10)) == expected
+
+
+def test_drop_marker_uses_coordinates_outside_frame_padding():
+    placements = []
+    feedback = SimpleNamespace(
+        tree=SimpleNamespace(
+            identify_column=lambda x: "#2",
+            winfo_height=lambda: 100,
+            winfo_width=lambda: 200,
+            identify_row=lambda y: "row",
+            bbox=lambda row, column: (100, 26, 100, 26),
+            winfo_x=lambda: 12,
+            winfo_y=lambda: 12,
+        ),
+        marker=SimpleNamespace(place=lambda **options: placements.append(options), lift=lambda: None),
+    )
+
+    app.ColumnDragFeedback.show(feedback, SimpleNamespace(x=130, y=10))
+
+    assert placements == [{"x": 111, "y": 12, "height": 26, "bordermode": "outside"}]
 
 
 def test_double_clicking_a_header_separator_fits_heading_and_values(monkeypatch):

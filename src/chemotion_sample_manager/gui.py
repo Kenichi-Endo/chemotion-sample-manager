@@ -455,8 +455,10 @@ def column_drop_marker_x(tree, event):
     widths = [tree.column(f"#{index + 1}", "width") for index in range(len(displayed))]
     inset = next((x for x in range(tree.winfo_width())
                   if tree.identify_region(x, event.y) in {"heading", "separator"}), 0)
-    tree_column_width = tree.column("#0", "width") if "tree" in tree.cget("show") else 0
-    return inset + tree_column_width + sum(widths[:int(column[1:]) - 1]) - round(tree.xview()[0] * sum(widths))
+    shown = tree.tk.splitlist(tree.cget("show"))
+    tree_column_width = tree.column("#0", "width") if "tree" in map(str, shown) else 0
+    scroll_offset = round(tree.xview()[0] * (tree_column_width + sum(widths)))
+    return inset + tree_column_width + sum(widths[:int(column[1:]) - 1]) - scroll_offset
 
 
 class ColumnDragFeedback:
@@ -473,7 +475,7 @@ class ColumnDragFeedback:
             self.marker.place_forget()
             return
         self.marker.place(x=self.tree.winfo_x() + marker_x - 1,
-                          y=self.tree.winfo_y(), height=26)
+                          y=self.tree.winfo_y(), height=26, bordermode="outside")
         self.marker.lift()
 
     def hide(self):
