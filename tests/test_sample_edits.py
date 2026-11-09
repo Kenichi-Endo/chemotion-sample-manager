@@ -161,6 +161,20 @@ def test_navigation_commits_through_field_validation(field):
     assert committed == [(args, {"advance": "left"})]
 
 
+@pytest.mark.parametrize("value, count", [("", 1), ("   ", 2)])
+def test_sample_name_commit_accepts_blank(value, count):
+    rows = [{"id": sample_id, "sample": "Original"} for sample_id in range(1, count + 1)]
+    saved = []
+    viewer = SimpleNamespace(
+        amount_editor=SimpleNamespace(get=lambda: value), editing_rows=rows,
+        cancel_amount_edit=lambda: None,
+        _save_sample_name=lambda *args: saved.append(args),
+    )
+
+    assert app.SampleManager.finish_name_edit(viewer, rows[0], "sample") == "break"
+    assert saved == [(rows, "")]
+
+
 @pytest.mark.parametrize("value, expected", [("1,25", "1.25"), ("", None), ("0", "0")])
 def test_density_commit_normalizes_value(value, expected):
     rows = [{"id": 1, "density": "—"}, {"id": 2, "density": "2"}]

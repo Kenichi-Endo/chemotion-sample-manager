@@ -1744,10 +1744,6 @@ class SampleManager(tk.Tk):
                 editor.focus_set(); editor.selection_range(0, "end")
                 return "break"
             value = str(number)
-        if not value and field == "sample":
-            self.status.configure(text=f"{('Molecule' if field == 'molecule' else 'Sample')} name cannot be empty.", fg=self.colors["error"])
-            editor.focus_set(); editor.selection_range(0, "end")
-            return "break"
         rows = self.editing_rows or [row]
         if value == row[field] and len(rows) == 1:
             if advance: self.queue_next_edit(str(row["id"]), field, advance)

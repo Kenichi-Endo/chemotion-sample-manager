@@ -165,6 +165,7 @@ def test_prefetched_details_skip_individual_sample_request(client, sample_server
     ("set_location", ("New",), {"location": "New"}),
     ("set_density", ("1.25",), {"density": "1.25"}),
     ("set_sample_name", ("Renamed",), {"name": "Renamed"}),
+    ("set_sample_name", ("",), {"name": ""}),
     ("set_molecule_name", (12,), {"molecule_name_id": 12}),
     ("set_amount", ("real_amount", "0", "g"), {"real_amount_value": "0", "real_amount_unit": "g"}),
     ("set_amount", ("target_amount", "250", "mg"), {"target_amount_value": "250", "target_amount_unit": "mg"}),
