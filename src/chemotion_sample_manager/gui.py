@@ -706,6 +706,8 @@ class SampleManager(tk.Tk):
         self.status = StatusLabel(self.status_area, text="0 samples"); self.status.pack(anchor="w")
         self.progress = ttk.Progressbar(self.progress_area, mode="determinate", maximum=100, style="Inventory.Horizontal.TProgressbar")
         self.progress.pack(side="left", fill="x", expand=True)
+        self.bind_class("CancelCellEdit", "<ButtonPress-1>", self.cancel_edit_on_outside_click)
+        self.bind_outside_editor_clicks(self)
         self.bind("<Escape>", self.cancel_inventory_load, add="+")
         self.apply_appearance(True); self.watch_system_appearance()
         if self.text_filter.get():
@@ -1629,7 +1631,6 @@ class SampleManager(tk.Tk):
         editor.bind("<KP_Enter>", lambda _event: self.finish_amount_edit(row, advance=True))
         editor.bind("<Escape>", self.defocus_field)
         self.bind_editor_navigation(editor, item_id)
-        editor.bind("<FocusOut>", lambda _event: self.finish_amount_edit(row))
         return "break"
     def edit_vendor(self, row, item_id):
         self.cancel_amount_edit()
@@ -1644,7 +1645,6 @@ class SampleManager(tk.Tk):
         editor.bind("<KP_Enter>", lambda _event: self.finish_vendor_edit(row, advance=True))
         editor.bind("<Escape>", self.defocus_field)
         self.bind_editor_navigation(editor, item_id)
-        editor.bind("<FocusOut>", lambda _event: self.finish_vendor_edit(row))
         return "break"
     def edit_location(self, row, item_id):
         self.cancel_amount_edit()
@@ -1661,7 +1661,6 @@ class SampleManager(tk.Tk):
         editor.bind("<<ComboboxSelected>>", lambda _event: self.finish_location_edit(row))
         editor.bind("<Escape>", self.defocus_field)
         self.bind_editor_navigation(editor, item_id)
-        editor.bind("<FocusOut>", lambda _event: self.finish_location_edit(row))
         return "break"
     def edit_amount_cell(self, row, item_id):
         self.cancel_amount_edit()
@@ -1678,7 +1677,6 @@ class SampleManager(tk.Tk):
         editor.bind("<KP_Enter>", lambda _event: self.finish_amount_edit(row, advance=True))
         editor.bind("<Escape>", self.defocus_field)
         self.bind_editor_navigation(editor, item_id)
-        editor.bind("<FocusOut>", lambda _event: self.finish_amount_edit(row))
         return "break"
     def edit_name(self, row, item_id, field):
         if field == "molecule" and row.get("sample_type") == "Mixture": return "break"
@@ -1694,7 +1692,6 @@ class SampleManager(tk.Tk):
         editor.bind("<KP_Enter>", lambda _event: self.finish_name_edit(row, field, advance=True))
         editor.bind("<Escape>", self.defocus_field)
         self.bind_editor_navigation(editor, item_id)
-        editor.bind("<FocusOut>", lambda _event: self.finish_name_edit(row, field))
         return "break"
     def finish_name_edit(self, row, field, advance=False):
         editor = self.amount_editor
@@ -1803,6 +1800,15 @@ class SampleManager(tk.Tk):
         route = "scollection" if row.get("synchronized") else "collection"
         webbrowser.open_new_tab(f"{client.CHEMOTION_URL}/mydb/{route}/{collection_id}/sample/{row['id']}")
         return "break"
+    def bind_outside_editor_clicks(self, widget):
+        # Run before widget bindings can consume the click or open a new editor.
+        # Inline editors and their dropdowns are created later and keep their own bindings.
+        widget.bindtags(("CancelCellEdit", *widget.bindtags()))
+        for child in widget.winfo_children():
+            self.bind_outside_editor_clicks(child)
+    def cancel_edit_on_outside_click(self, _event):
+        if self.amount_editor:
+            self.cancel_amount_edit()
     def cancel_amount_edit(self):
         if self.amount_editor:
             editor, self.amount_editor = self.amount_editor, None
