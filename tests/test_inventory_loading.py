@@ -454,13 +454,12 @@ def test_table_updates_during_loading_and_ignores_old_loads():
         inventory_cancel_event=current, inventory_loading=True, rows=[],
         structure_rows_pending=set(), structure_images={},
         column_visibility={"structure": SimpleNamespace(get=lambda: True)},
-        update_location_filter=lambda: updates.append("locations"),
         render_rows=lambda: updates.append("table"),
         load_structure_images=lambda rows: updates.append(("structures", rows)),
     )
     app.SampleManager._rows_loaded(viewer, [{"id": 10}], current)
     assert viewer.rows == [{"id": 10}]
-    assert updates == ["locations", "table", ("structures", [{"id": 10}])]
+    assert updates == ["table", ("structures", [{"id": 10}])]
     app.SampleManager._rows_loaded(viewer, [{"id": 2}], threading.Event())
     viewer.inventory_loading = False
     app.SampleManager._rows_loaded(viewer, [{"id": 1}], current)
@@ -495,7 +494,7 @@ def test_streamed_rows_and_thumbnails_preserve_selection_and_active_edit():
         editing_cell=("10", "sample"), editing_rows=[],
         column_visibility={"structure": SimpleNamespace(get=lambda: True)},
         structure_rows_pending=set(), structure_images={}, structure_image_waiters={},
-        update_location_filter=lambda: None, load_structure_images=lambda rows: None,
+        load_structure_images=lambda rows: None,
         sort_key="label", sort_reverse=True,
         row_values=lambda row: (row["label"],),
         cancel_amount_edit=lambda: pytest.fail("Loading cancelled the active edit"),
@@ -760,7 +759,7 @@ def test_row_appears_with_its_thumbnail_without_changing_retrieval_status(monkey
         column_visibility={"structure": SimpleNamespace(get=lambda: True)},
         structure_rows_pending=set(), structure_images={},
         structure_image_pending=set(), structure_image_waiters={},
-        update_location_filter=lambda: None, load_structure_images=lambda rows: None,
+        load_structure_images=lambda rows: None,
         cancel_amount_edit=lambda: None, sort_key="label", sort_reverse=False,
         row_values=lambda row: (row["label"],),
         status=SimpleNamespace(configure=lambda **kwargs: status_updates.append(kwargs)),
@@ -883,7 +882,7 @@ def test_loaded_status_marks_aborted_load(aborted):
     updates = []
     viewer = SimpleNamespace(
         inventory_cancel_event=current, location_filter_retained_row_ids=set(),
-        loaded_collections=[], update_location_filter=lambda: None,
+        loaded_collections=[],
         render_rows=lambda: None, hide_progress=lambda: None,
         filtered_rows=lambda: viewer.rows,
         status=SimpleNamespace(configure=lambda **kwargs: updates.append(kwargs)),

@@ -1,4 +1,5 @@
 """Regex filtering uses the text shown in visible inventory columns."""
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -46,22 +47,30 @@ def test_filters_profile_round_trip(pattern, location, monkeypatch, tmp_path):
     }
 
 
-def test_saved_location_survives_partial_loading():
+def test_location_menu_refreshes_on_opening_and_stays_stable_during_loading():
     menus = []
+    loading = Event()
     view = SimpleNamespace(
-        rows=[],
+        rows=[], inventory_loading=True, inventory_cancel_event=loading,
+        column_visibility={"structure": SimpleNamespace(get=lambda: False)},
+        render_rows=lambda: None,
         location_filter=SimpleNamespace(get=lambda: "Shelf B"),
         location_filter_menu=SimpleNamespace(set_menu=lambda default, *choices: menus.append(choices)),
     )
-    SampleManager.update_location_filter(view)
-    view.rows = [{"location": "Shelf A"}]
-    SampleManager.update_location_filter(view)
-    view.rows.append({"location": "Shelf B"})
-    SampleManager.update_location_filter(view)
+    view.update_location_filter = lambda: SampleManager.update_location_filter(view)
+    view.update_location_filter()
+    SampleManager._rows_loaded(view, [{"location": "Shelf A"}], loading)
+    assert menus == [("All locations", "Shelf B")]
+
+    view.update_location_filter()
+    SampleManager._rows_loaded(view, [{"location": "Shelf B"}, {"location": "Shelf C"}], loading)
+    assert menus[-1] == ("All locations", "Shelf A", "Shelf B")
+
+    view.update_location_filter()
     assert menus == [
         ("All locations", "Shelf B"),
         ("All locations", "Shelf A", "Shelf B"),
-        ("All locations", "Shelf A", "Shelf B"),
+        ("All locations", "Shelf A", "Shelf B", "Shelf C"),
     ]
 
 

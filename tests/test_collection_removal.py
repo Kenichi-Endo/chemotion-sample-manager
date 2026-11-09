@@ -58,7 +58,7 @@ def test_row_is_removed_only_when_no_loaded_collection_keeps_it(locked):
     row = {"id": 7, "label": "S7"}
     viewer = SimpleNamespace(
         rows=[row], selected_row_ids={"7"}, hide_progress=lambda: None,
-        set_controls_busy=lambda busy: None, update_location_filter=lambda: None,
+        set_controls_busy=lambda busy: None,
         render_rows=lambda **kwargs: None,
         print_button=SimpleNamespace(configure=lambda **kwargs: None),
         status=SimpleNamespace(configure=lambda **kwargs: None), colors={"error": "red", "muted": "gray"})

@@ -340,7 +340,7 @@ def test_bulk_failure_identifies_samples_by_short_label_or_id(
     monkeypatch.setattr(app.messagebox, "showerror", lambda title, message: messages.append(message))
     viewer = SimpleNamespace(
         rows=rows, location_filter_retained_row_ids=set(), selected_row_ids=set(),
-        update_location_filter=lambda: None, render_rows=lambda **kwargs: None,
+        render_rows=lambda **kwargs: None,
         hide_progress=lambda: None, set_controls_busy=lambda busy: None,
         print_button=SimpleNamespace(configure=lambda **kwargs: None),
         status=SimpleNamespace(configure=lambda **kwargs: None), colors={"error": "red"},

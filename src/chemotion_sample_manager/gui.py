@@ -646,7 +646,10 @@ class SampleManager(tk.Tk):
         ttk.Label(self.location_controls, text="Location:").pack(side="left", padx=(12, 0))
         self.location_filter_menu = ttk.OptionMenu(self.location_controls, self.location_filter,
                                                    self.location_filter.get(), "All locations",
+                                                   direction="below",
                                                    command=self.filter_by_location)
+        # Keep the menu stable while it is open, even as samples arrive.
+        self.location_filter_menu["menu"].configure(postcommand=self.update_location_filter)
         self.location_filter_menu.pack(side="left", padx=4)
         self.print_button = ttk.Button(self.location_controls, text="Print…", command=self.printable, state="disabled"); self.print_button.pack(side="left", padx=4)
         self.export_button = ttk.Button(self.location_controls, text="Export collection…", command=self.export_collection, state="disabled")
@@ -1129,7 +1132,6 @@ class SampleManager(tk.Tk):
                 row["id"] for row in rows
                 if row.get("structure") and row["structure"] not in self.structure_images
             )
-        self.update_location_filter()
         self.render_rows()
         if displayed is not None:
             source = rows[0].get("structure") if rows else None
@@ -1153,7 +1155,7 @@ class SampleManager(tk.Tk):
         if cancelled is not None and cancelled is not self.inventory_cancel_event: return
         self.inventory_loading = False
         suffix = " (aborted)" if cancelled is not None and cancelled.is_set() else ""
-        self.rows=rows; self.location_filter_retained_row_ids.clear(); self.update_location_filter(); self.render_rows(); self.hide_progress(); self.status.configure(text=inventory_status_text(len(self.filtered_rows()), self.loaded_collections) + suffix,fg=self.colors["muted"]); self.set_controls_busy(False); self.print_button.configure(state="normal" if rows else "disabled")
+        self.rows=rows; self.location_filter_retained_row_ids.clear(); self.render_rows(); self.hide_progress(); self.status.configure(text=inventory_status_text(len(self.filtered_rows()), self.loaded_collections) + suffix,fg=self.colors["muted"]); self.set_controls_busy(False); self.print_button.configure(state="normal" if rows else "disabled")
         if self.column_visibility["structure"].get():
             self.load_structure_images(self.filtered_rows())
     def _cancelled(self, cancelled, rows=None):
@@ -1186,7 +1188,7 @@ class SampleManager(tk.Tk):
         self.collection_selection_locked = busy
         self.loading_order_menu.configure(state="disabled" if busy else "normal")
         self.collection_menu.configure(state="normal" if self.collection_choices else "disabled")
-        self.location_filter_menu.configure(state="disabled" if busy else "normal")
+        self.location_filter_menu.configure(state="disabled" if busy and not loading else "normal")
     def guard_collection_selection(self, event):
         if self.collection_selection_locked and event.keysym not in {"Tab", "ISO_Left_Tab", "Escape"}:
             return "break"
@@ -1560,7 +1562,7 @@ class SampleManager(tk.Tk):
             self.status.configure(text=f"{row['label']} remains in at least one loaded collection because it is linked to another item.", fg=self.colors["error"])
             return
         self.rows = [item for item in self.rows if item is not row]
-        self.selected_row_ids.clear(); self.update_location_filter(); self.render_rows(preserve_display_order=True)
+        self.selected_row_ids.clear(); self.render_rows(preserve_display_order=True)
         self.hide_progress(); self.set_controls_busy(False)
         self.print_button.configure(state="normal" if self.rows else "disabled")
         self.status.configure(text=f"Removed {row['label']} from all loaded collections.", fg=self.colors["muted"])
@@ -2096,7 +2098,7 @@ class SampleManager(tk.Tk):
         self.location_filter_retained_row_ids.update(
             str(row["id"]) for row in selected_rows if str(row["id"]) not in failed_row_ids
         )
-        self.update_location_filter(); self.selected_row_ids.clear()
+        self.selected_row_ids.clear()
         self.render_rows(preserve_display_order=True); self.hide_progress()
         self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled")
         changed = len(selected_rows) - len(failures)
