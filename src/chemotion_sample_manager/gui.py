@@ -1186,7 +1186,7 @@ class SampleManager(tk.Tk):
         self.collection_selection_locked = busy
         self.loading_order_menu.configure(state="disabled" if busy else "normal")
         self.collection_menu.configure(state="normal" if self.collection_choices else "disabled")
-        self.location_filter_menu.configure(state="disabled" if busy else "normal")
+        self.location_filter_menu.configure(state="disabled" if busy and not loading else "normal")
     def guard_collection_selection(self, event):
         if self.collection_selection_locked and event.keysym not in {"Tab", "ISO_Left_Tab", "Escape"}:
             return "break"
