@@ -338,12 +338,8 @@ def refresh_inventory_row(client, row, require_amount=False):
 
 
 def replace_inventory_row(row, refreshed):
-    """Keep collection membership discovered by the inventory listing."""
-    collection = row.get("collection")
-    row.clear()
+    """Apply fresh sample fields while keeping metadata from the inventory listing."""
     row.update(refreshed)
-    if collection is not None:
-        row.setdefault("collection", collection)
 
 
 def rows_for_location_filter(rows, location, retained_row_ids=()):

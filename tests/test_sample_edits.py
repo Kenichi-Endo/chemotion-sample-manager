@@ -273,12 +273,14 @@ def test_amount_refresh_accepts_zero():
     assert row == {"id": 1, "amount_value": 0}
 
 
-@pytest.mark.parametrize("clicked_id, expected_ids", [(1, [1, 2]), (4, [4])])
-def test_location_cell_edit_targets_selected_visible_rows(clicked_id, expected_ids):
+@pytest.mark.parametrize("loading, clicked_id, expected_ids", [
+    (False, 1, [1, 2]), (False, 4, [4]), (True, 1, [1, 2]),
+])
+def test_location_cell_edit_targets_selected_visible_rows(loading, clicked_id, expected_ids):
     rows = [{"id": number, "location": "Old"} for number in (1, 2, 3, 4)]
     opened = []
     viewer = SimpleNamespace(
-        rows=rows, selected_row_ids={"1", "2", "3"},
+        rows=rows, selected_row_ids={"1", "2", "3"}, inventory_loading=loading, editing_rows=[],
         filtered_rows=lambda: [rows[0], rows[1], rows[3]],
         displayed_column_key=lambda event: "location",
         tree=SimpleNamespace(
@@ -328,6 +330,7 @@ def test_location_cell_commit_updates_selection_and_preserves_flags(monkeypatch)
 
     viewer.cancel_amount_edit = cancel_edit
     viewer._change_locations = lambda *args: app.SampleManager._change_locations(viewer, *args)
+    viewer._start_sample_edit = lambda *args: app.SampleManager._start_sample_edit(viewer, *args)
 
     assert app.SampleManager.finish_location_edit(viewer, rows[0], advance=True) == "break"
 
@@ -361,6 +364,7 @@ def test_bulk_failure_identifies_samples_by_short_label_or_id(
         edit_saved_next_cell=lambda: None,
     )
     error = 'Chemotion returned 401: {"error":"401 Unauthorized"}'
+    viewer._finish_sample_edit = lambda: app.SampleManager._finish_sample_edit(viewer)
 
     failures = [(row, error) for row in rows]
     getattr(app.SampleManager, callback)(viewer, rows, *before_failures, failures, *after_failures)

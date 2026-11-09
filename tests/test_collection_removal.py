@@ -34,20 +34,25 @@ def test_removal_attempts_every_loaded_collection(monkeypatch, failure, locked):
         assert completed == [(row, ["7"] if locked else [])]
 
 
-def test_delete_uses_loaded_collections_and_confirmation(monkeypatch):
+@pytest.mark.parametrize("loading", [False, True])
+def test_delete_uses_loaded_collections_and_confirmation(monkeypatch, loading):
     workers, prompts = [], []
     loaded = [{"id": 1}, {"id": 2, "_synchronized": True}]
     monkeypatch.setattr(app.messagebox, "askyesno", lambda title, message, **kwargs: prompts.append(message) or True)
     monkeypatch.setattr(app.threading, "Thread", lambda **kwargs: SimpleNamespace(start=lambda: workers.append(kwargs)))
     row = {"id": 7, "label": "S7", "sample": "Sample"}
     viewer = SimpleNamespace(
-        tree=SimpleNamespace(selection=lambda: ("7",), focus=lambda: "7"), rows=[row],
+        tree=SimpleNamespace(selection=lambda: ("7",), focus=lambda: "7"), rows=[row], inventory_loading=loading,
         loaded_collections=loaded, selected_collections=lambda: [{"id": 99}],
         cancel_amount_edit=lambda: None, set_controls_busy=lambda busy: None,
         print_button=SimpleNamespace(configure=lambda **kwargs: None), show_progress=lambda: None,
         status=SimpleNamespace(configure=lambda **kwargs: None), colors={"accent": "blue"},
         _remove_sample_from_collection=lambda *args: None)
     assert app.SampleManager.delete_selected_row(viewer) == "break"
+    if loading:
+        assert not prompts
+        assert not workers
+        return
     assert "all 2 loaded collections" in prompts[0]
     assert workers[0]["args"] == (row, loaded)
     assert workers[0]["args"][1] is not loaded

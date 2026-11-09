@@ -1179,6 +1179,7 @@ class SampleManager(tk.Tk):
         self.progress.configure(maximum=100, value=0)
     def _progress(self, message, cancelled=None):
         if cancelled is not None and (cancelled.is_set() or cancelled is not self.inventory_cancel_event): return
+        if cancelled is None and self.inventory_loading: return
         self.status.configure(text=f"{message} (Esc to stop)", fg=self.colors["accent"])
         match = re.search(r": (\d+) of (\d+)", message)
         if match:
@@ -1188,7 +1189,8 @@ class SampleManager(tk.Tk):
         if cancelled is not None and cancelled is not self.inventory_cancel_event: return
         self.inventory_loading = False
         suffix = " (aborted)" if cancelled is not None and cancelled.is_set() else ""
-        self.rows=rows; self.location_filter_retained_row_ids.clear(); self.render_rows(); self.hide_progress(); self.status.configure(text=inventory_status_text(len(self.filtered_rows()), self.loaded_collections) + suffix,fg=self.colors["muted"]); self.set_controls_busy(False); self.print_button.configure(state="normal" if rows else "disabled")
+        self.rows=rows; self.location_filter_retained_row_ids.clear(); self.render_rows(); self.hide_progress(); self.status.configure(text=inventory_status_text(len(self.filtered_rows()), self.loaded_collections) + suffix,fg=self.colors["muted"]); self.set_controls_busy(False)
+        self.print_button.configure(state="normal" if rows and not getattr(self, "sample_edit_saving", False) else "disabled")
         if self.column_visibility["structure"].get():
             self.load_structure_images(self.filtered_rows())
     def _cancelled(self, cancelled, rows=None):
@@ -1205,9 +1207,10 @@ class SampleManager(tk.Tk):
         self.inventory_loading = False
         self.hide_progress(); self.status.configure(text="The selected Chemotion collection could not be retrieved.",fg=self.colors["error"]); self.set_controls_busy(False); messagebox.showerror(APP_NAME,error)
     def set_controls_busy(self, busy):
+        loading = self.inventory_loading
+        busy = busy or loading or getattr(self, "sample_edit_saving", False)
         collection = self.collection_choices.get(self.collection_value.get())
         self.export_button.configure(state="normal" if not busy and self.logged_in and collection and not collection.get("_synchronized") else "disabled")
-        loading = busy and self.inventory_loading
         stopping = loading and self.inventory_cancel_event is not None and self.inventory_cancel_event.is_set()
         self.refresh_button.configure(
             text="Stop" if loading else "Go",
@@ -1344,7 +1347,7 @@ class SampleManager(tk.Tk):
     def render_rows(self, preserve_display_order=False):
         existing_ids = self.tree.get_children()
         displayed_ids = existing_ids if preserve_display_order else ()
-        if preserve_display_order:
+        if preserve_display_order and not getattr(self, "inventory_loading", False):
             # Keep filter membership stable after edits, including for later
             # selection and printing, until the user changes a filter or reloads.
             self.edit_display_row_ids = set(existing_ids)
@@ -1552,6 +1555,8 @@ class SampleManager(tk.Tk):
         return "break"
     def delete_selected_row(self, _event=None):
         """Confirm removal of the focused selected row from all loaded collections."""
+        if getattr(self, "inventory_loading", False) or getattr(self, "sample_edit_saving", False):
+            return "break"
         selected_ids = set(self.tree.selection())
         item_id = self.tree.focus()
         if item_id not in selected_ids:
@@ -1632,6 +1637,8 @@ class SampleManager(tk.Tk):
         return "break"
     def edit_amount(self, event):
         """Edit the supported inventory fields directly in the table."""
+        if getattr(self, "sample_edit_saving", False):
+            return
         item_id = self.tree.identify_row(event.y)
         if not item_id: return
         row = next((item for item in self.rows if str(item["id"]) == item_id), None)
@@ -1768,9 +1775,7 @@ class SampleManager(tk.Tk):
             self.cancel_amount_edit(); self.edit_saved_next_cell(); return "break"
         if advance and len(rows) == 1: self.queue_next_edit(str(row["id"]), "location", advance)
         self.cancel_amount_edit()
-        self.set_controls_busy(True); self.print_button.configure(state="disabled"); self.show_progress()
-        self.status.configure(text=f"Changing locations for {len(rows)} sample{'s' if len(rows) != 1 else ''}…", fg=self.colors["accent"])
-        threading.Thread(target=self._change_locations, args=(rows, location), daemon=True).start()
+        self._start_sample_edit(rows, "location", self._change_locations, location)
         return "break"
     def change_selected_flags(self, item_id, field):
         """Toggle one displayed checkbox for all currently selected samples."""
@@ -1786,9 +1791,7 @@ class SampleManager(tk.Tk):
         value = not next(row for row in selected_rows if str(row["id"]) == item_id)[field]
         self.selected_row_ids = {str(row["id"]) for row in selected_rows}
         label = "Decoupled" if field == "decoupled" else "Inventory"
-        self.set_controls_busy(True); self.print_button.configure(state="disabled"); self.show_progress()
-        self.status.configure(text=f"Updating {label} for {len(selected_rows)} sample{'s' if len(selected_rows) != 1 else ''}…", fg=self.colors["accent"])
-        threading.Thread(target=self._change_flags, args=(selected_rows, field, value, label), daemon=True).start()
+        self._start_sample_edit(selected_rows, label, self._change_flags, field, value, label)
         return "break"
     def _change_flags(self, selected_rows, field, value, label):
         failures = []
@@ -1809,8 +1812,8 @@ class SampleManager(tk.Tk):
         except Exception as error:
             self.after(0, self._flags_change_failed, label, str(error))
     def _flags_changed(self, selected_rows, field, value, label, failures):
-        self.selected_row_ids.clear(); self.render_rows(preserve_display_order=True); self.hide_progress()
-        self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled")
+        self.selected_row_ids.clear(); self.render_rows(preserve_display_order=True)
+        self._finish_sample_edit()
         changed = len(selected_rows) - len(failures)
         if failures:
             self.status.configure(text=f"Updated {label} for {changed} of {len(selected_rows)} samples; {len(failures)} could not be changed.", fg=self.colors["error"])
@@ -1818,7 +1821,7 @@ class SampleManager(tk.Tk):
         else:
             self.status.configure(text=f"Set {label} to {'checked' if value else 'unchecked'} for {changed} sample{'s' if changed != 1 else ''}.", fg=self.colors["muted"])
     def _flags_change_failed(self, label, error):
-        self.hide_progress(); self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled")
+        self._finish_sample_edit()
         self.status.configure(text=f"{label} could not be changed.", fg=self.colors["error"])
         messagebox.showerror(APP_NAME, error)
     def open_sample(self, event):
@@ -1977,14 +1980,23 @@ class SampleManager(tk.Tk):
         self.cancel_amount_edit(); self._save_vendor(rows, vendor)
         return "break"
     def _start_sample_edit(self, rows, label, target, *values):
+        self.sample_edit_saving = True
         self.set_controls_busy(True)
         self.print_button.configure(state="disabled")
-        self.show_progress()
-        self.status.configure(
-            text=f"Updating the {label} for {len(rows)} sample{'s' if len(rows) != 1 else ''}…",
-            fg=self.colors["accent"],
-        )
+        if not getattr(self, "inventory_loading", False):
+            self.show_progress()
+            self.status.configure(
+                text=f"Updating the {label} for {len(rows)} sample{'s' if len(rows) != 1 else ''}…",
+                fg=self.colors["accent"],
+            )
         threading.Thread(target=target, args=(rows, *values), daemon=True).start()
+    def _finish_sample_edit(self):
+        self.sample_edit_saving = False
+        loading = getattr(self, "inventory_loading", False)
+        if not loading:
+            self.hide_progress()
+        self.set_controls_busy(loading)
+        self.print_button.configure(state="normal" if self.rows and not loading else "disabled")
     def _save_amount(self, rows, value, unit):
         self._start_sample_edit(rows, "amount", self._change_amount, value, unit)
     def _save_sample_name(self, rows, name):
@@ -2050,7 +2062,7 @@ class SampleManager(tk.Tk):
         self.edit_saved_next_cell()
     def _name_change_failed(self, label, error):
         self.edit_after_save = None
-        self.hide_progress(); self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled")
+        self._finish_sample_edit()
         self.status.configure(text=f"The {label} could not be changed.", fg=self.colors["error"])
         messagebox.showerror(APP_NAME, error)
     def _change_amount(self, rows, value, unit):
@@ -2076,7 +2088,7 @@ class SampleManager(tk.Tk):
         self.edit_saved_next_cell()
     def _amount_change_failed(self, error):
         self.edit_after_save = None
-        self.hide_progress(); self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled")
+        self._finish_sample_edit()
         self.status.configure(text="The amount could not be changed.", fg=self.colors["error"])
         messagebox.showerror(APP_NAME, error)
     def _save_vendor(self, rows, vendor):
@@ -2096,8 +2108,8 @@ class SampleManager(tk.Tk):
         except Exception as error:
             self.after(0, self._vendor_change_failed, str(error))
     def _batch_edit_finished(self, rows, failures, label):
-        self.render_rows(preserve_display_order=True); self.hide_progress(); self.set_controls_busy(False)
-        self.print_button.configure(state="normal" if self.rows else "disabled")
+        self.render_rows(preserve_display_order=True)
+        self._finish_sample_edit()
         changed = len(rows) - len(failures)
         if self.selected_row_ids: self.tree.selection_set(tuple(self.selected_row_ids & set(self.tree.get_children())))
         if failures:
@@ -2117,7 +2129,7 @@ class SampleManager(tk.Tk):
         self.edit_saved_next_cell()
     def _vendor_change_failed(self, error):
         self.edit_after_save = None
-        self.hide_progress(); self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled")
+        self._finish_sample_edit()
         self.status.configure(text="The vendor could not be changed.", fg=self.colors["error"])
         messagebox.showerror(APP_NAME, error)
     def _change_locations(self, selected_rows, location):
@@ -2140,8 +2152,8 @@ class SampleManager(tk.Tk):
             str(row["id"]) for row in selected_rows if str(row["id"]) not in failed_row_ids
         )
         self.selected_row_ids.clear()
-        self.render_rows(preserve_display_order=True); self.hide_progress()
-        self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled")
+        self.render_rows(preserve_display_order=True)
+        self._finish_sample_edit()
         changed = len(selected_rows) - len(failures)
         if failures:
             self.status.configure(text=f"Changed {changed} of {len(selected_rows)} locations; {len(failures)} could not be changed.", fg=self.colors["error"])
@@ -2149,7 +2161,10 @@ class SampleManager(tk.Tk):
         else: self.status.configure(text=f"Changed the location of {changed} item{'s' if changed != 1 else ''} to {location}.", fg=self.colors["muted"])
         self.edit_saved_next_cell()
     def _locations_change_failed(self, error):
-        self.hide_progress(); self.status.configure(text="The selected locations could not be changed.", fg=self.colors["error"]); self.set_controls_busy(False); self.print_button.configure(state="normal" if self.rows else "disabled"); messagebox.showerror(APP_NAME, error)
+        self.edit_after_save = None
+        self._finish_sample_edit()
+        self.status.configure(text="The selected locations could not be changed.", fg=self.colors["error"])
+        messagebox.showerror(APP_NAME, error)
     def choose_print_layout(self):
         """Show print-only column and page-break choices before opening macOS Print."""
         print_keys = tuple(key for key in self.keys if key != "structure") + PRINT_CHECKLIST_KEYS

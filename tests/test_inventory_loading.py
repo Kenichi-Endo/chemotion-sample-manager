@@ -370,12 +370,14 @@ def test_sample_list_status_shows_completed_collection_count(monkeypatch):
 def test_loading_status_shows_escape_stop_hint():
     viewer = app.SampleManager.__new__(app.SampleManager)
     updates = []
-    viewer.inventory_cancel_event = None
+    viewer.inventory_loading = True
+    viewer.inventory_cancel_event = threading.Event()
     viewer.colors = {"accent": "accent"}
     viewer.status = SimpleNamespace(configure=lambda **kwargs: updates.append(kwargs))
     viewer.progress = SimpleNamespace(configure=lambda **kwargs: None)
 
-    viewer._progress("Retrieving sample information: 1 of 3…")
+    viewer._progress("Retrieving sample information: 1 of 3…", viewer.inventory_cancel_event)
+    viewer._progress("Updating sample name: 1 of 1…")
 
     assert updates == [{"text": "Retrieving sample information: 1 of 3… (Esc to stop)", "fg": "accent"}]
 
@@ -693,6 +695,8 @@ def test_ready_rows_wait_for_all_preceding_details_and_thumbnails():
     inserted = {}
     viewer = SimpleNamespace(
         rows=[], inventory_loading=True,
+        location_filter=SimpleNamespace(get=lambda: "All locations"),
+        location_filter_retained_row_ids=set(),
         column_visibility={"structure": SimpleNamespace(get=lambda: True)},
         structure_rows_pending=set(), structure_images={},
         sort_key="label", sort_reverse=True,
@@ -705,7 +709,7 @@ def test_ready_rows_wait_for_all_preceding_details_and_thumbnails():
             move=lambda *args: None,
         ),
     )
-    viewer.filtered_rows = lambda: viewer.rows
+    viewer.filtered_rows = lambda: app.SampleManager.filtered_rows(viewer)
     second = {"id": 2, "label": "S2", "_inventory_position": 1}
     first = {"id": 10, "label": "S10", "_inventory_position": 0}
     viewer.rows.append(second)
@@ -718,6 +722,12 @@ def test_ready_rows_wait_for_all_preceding_details_and_thumbnails():
     viewer.structure_rows_pending.clear()
     app.SampleManager.render_rows(viewer)
     assert list(inserted) == ["10", "2"]
+
+    app.replace_inventory_row(first, {"id": 10, "label": "S10", "sample": "Edited"})
+    app.SampleManager.render_rows(viewer, preserve_display_order=True)
+    viewer.rows.append({"id": 1, "label": "S1", "_inventory_position": 2})
+    app.SampleManager.render_rows(viewer)
+    assert list(inserted) == ["10", "2", "1"]
 
 
 def test_thumbnail_acknowledgement_follows_image_assignment_and_idle_redraw(monkeypatch):
