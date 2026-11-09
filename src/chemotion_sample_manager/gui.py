@@ -647,7 +647,7 @@ class SampleManager(tk.Tk):
         self.location_filter_menu = ttk.OptionMenu(self.location_controls, self.location_filter,
                                                    self.location_filter.get(), "All locations",
                                                    direction="below",
-                                                   command=self.filter_by_location)
+                                                   command=self.location_filter_selected)
         # Keep the menu stable while it is open, even as samples arrive.
         self.location_filter_menu["menu"].configure(postcommand=self.update_location_filter)
         self.location_filter_menu.pack(side="left", padx=4)
@@ -1249,6 +1249,9 @@ class SampleManager(tk.Tk):
         self.profile_settings["text_filter"] = self.text_filter.get()
         self.profile_settings["location_filter"] = self.location_filter.get()
         save_profile_settings(self.profile_settings)
+    def location_filter_selected(self, _location):
+        self.filter_by_location()
+        self.tree.focus_set()
     def filter_by_location(self, _event=None):
         self.edit_display_row_ids = None
         self.location_filter_retained_row_ids.clear()
