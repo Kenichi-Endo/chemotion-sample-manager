@@ -323,3 +323,27 @@ def test_location_cell_commit_updates_selection_and_preserves_flags(monkeypatch)
     ]
     assert [row["location"] for row in rows] == ["New", "New"]
     assert callbacks[-1] == (0, viewer._locations_changed, rows, "New", [])
+
+
+def test_location_failure_identifies_samples_by_short_label_or_id(monkeypatch):
+    rows = [
+        inventory.inventory_row({"id": 7, "short_label": "INV-7"}),
+        inventory.inventory_row({"id": 8, "name": "Named sample"}),
+    ]
+    messages = []
+    monkeypatch.setattr(app.messagebox, "showerror", lambda title, message: messages.append(message))
+    viewer = SimpleNamespace(
+        rows=rows, location_filter_retained_row_ids=set(), selected_row_ids=set(),
+        update_location_filter=lambda: None, render_rows=lambda **kwargs: None,
+        hide_progress=lambda: None, set_controls_busy=lambda busy: None,
+        print_button=SimpleNamespace(configure=lambda **kwargs: None),
+        status=SimpleNamespace(configure=lambda **kwargs: None), colors={"error": "red"},
+        edit_saved_next_cell=lambda: None,
+    )
+    error = 'Chemotion returned 401: {"error":"401 Unauthorized"}'
+
+    app.SampleManager._locations_changed(viewer, rows, "New", [(row, error) for row in rows])
+
+    assert messages == [
+        f"Some locations could not be changed:\n\nINV-7: {error}\nSample ID 8: {error}"
+    ]

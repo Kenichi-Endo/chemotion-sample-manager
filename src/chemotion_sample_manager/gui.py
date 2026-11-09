@@ -2080,7 +2080,13 @@ class SampleManager(tk.Tk):
         changed = len(selected_rows) - len(failures)
         if failures:
             self.status.configure(text=f"Changed {changed} of {len(selected_rows)} locations; {len(failures)} could not be changed.", fg=self.colors["error"])
-            messagebox.showerror(APP_NAME, "Some locations could not be changed:\n\n" + "\n".join(f"{row['sample']}: {error}" for row, error in failures[:5]))
+            details = []
+            for row, error in failures[:5]:
+                label = row.get("label")
+                if not label or label == "—":
+                    label = f"Sample ID {row['id']}"
+                details.append(f"{label}: {error}")
+            messagebox.showerror(APP_NAME, "Some locations could not be changed:\n\n" + "\n".join(details))
         else: self.status.configure(text=f"Changed the location of {changed} item{'s' if changed != 1 else ''} to {location}.", fg=self.colors["muted"])
         self.edit_saved_next_cell()
     def _locations_change_failed(self, error):
