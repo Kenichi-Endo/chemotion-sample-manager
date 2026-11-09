@@ -1680,37 +1680,29 @@ class SampleManager(tk.Tk):
         self.bind_editor_navigation(editor, item_id)
         return "break"
     def edit_vendor(self, row, item_id):
-        self.cancel_amount_edit()
-        self.editing_rows = self.selected_edit_rows(row)
-        box = self.tree.bbox(item_id, "vendor")
-        if not box: return "break"
-        x, y, width, height = box
-        editor = ttk.Entry(self.tree); editor.insert(0, "" if row["vendor"] == "—" else row["vendor"])
-        self.place_editor(editor, item_id, "vendor"); self.amount_editor = editor
-        editor.focus_set(); editor.selection_range(0, "end")
-        editor.bind("<Return>", lambda _event: self.finish_vendor_edit(row, advance=True))
-        editor.bind("<KP_Enter>", lambda _event: self.finish_vendor_edit(row, advance=True))
-        editor.bind("<Escape>", self.defocus_field)
-        self.bind_editor_navigation(editor, item_id)
-        return "break"
+        vendors = {sample["vendor"] for sample in self.rows}
+        choices = sorted(vendors - {"", "—"}, key=str.casefold)
+        initial_value = "" if row["vendor"] == "—" else row["vendor"]
+        return self.edit_choice_cell(row, item_id, "vendor", choices, initial_value, self.finish_vendor_edit)
     def edit_location(self, row, item_id):
+        return self.edit_choice_cell(
+            row, item_id, "location", location_choices(self.rows), row["location"], self.finish_location_edit,
+        )
+    def edit_choice_cell(self, row, item_id, column, choices, initial_value, finish_edit):
         self.cancel_amount_edit()
         self.editing_rows = self.selected_edit_rows(row)
-        box = self.tree.bbox(item_id, "location")
-        if not box: return "break"
-        # Select a known location or type a new one directly in the cell.
-        choices = location_choices(self.rows)
+        if not self.tree.bbox(item_id, column): return "break"
         editor = ttk.Combobox(self.tree, values=choices, state="normal")
-        editor.set(row["location"])
-        value = self.place_editor(editor, item_id, "location")
+        editor.set(initial_value)
+        value = self.place_editor(editor, item_id, column)
         self.amount_editor = editor
         editor.focus_set(); editor.selection_range(0, "end")
-        editor.bind("<<ComboboxSelected>>", lambda _event: self.finish_location_edit(row))
+        editor.bind("<<ComboboxSelected>>", lambda _event: finish_edit(row))
         editor.bind("<Escape>", self.defocus_field)
         self.bind_editor_navigation(editor, item_id)
-        self.bind_location_suggestions(editor, value, choices, row, item_id)
+        self.bind_choice_suggestions(editor, value, choices, row, item_id, finish_edit)
         return "break"
-    def bind_location_suggestions(self, editor, value, choices, row, item_id):
+    def bind_choice_suggestions(self, editor, value, choices, row, item_id, finish_edit):
         # The native combobox popup takes keyboard input away from the entry.
         # Keep suggestions in the table so the user can continue typing.
         suggestions = tk.Listbox(
@@ -1759,12 +1751,12 @@ class SampleManager(tk.Tk):
                 bounds = suggestions.bbox(index)
                 if bounds and bounds[1] <= event.y < bounds[1] + bounds[3]:
                     editor.set(suggestions.get(index))
-                    return self.finish_location_edit(row)
+                    return finish_edit(row)
                 return "break"
             selected = suggestions.curselection()
             if suggestions.winfo_ismapped() and selected:
                 editor.set(suggestions.get(selected[0]))
-            return self.finish_location_edit(row, advance=True)
+            return finish_edit(row, advance=True)
 
         def cleanup(_event):
             value.trace_remove("write", trace)
