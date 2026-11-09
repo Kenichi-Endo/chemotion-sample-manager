@@ -1699,16 +1699,87 @@ class SampleManager(tk.Tk):
         box = self.tree.bbox(item_id, "location")
         if not box: return "break"
         # Select a known location or type a new one directly in the cell.
-        editor = ttk.Combobox(self.tree, values=location_choices(self.rows), state="normal")
+        choices = location_choices(self.rows)
+        editor = ttk.Combobox(self.tree, values=choices, state="normal")
         editor.set(row["location"])
-        self.place_editor(editor, item_id, "location"); self.amount_editor = editor
+        value = self.place_editor(editor, item_id, "location")
+        self.amount_editor = editor
         editor.focus_set(); editor.selection_range(0, "end")
-        editor.bind("<Return>", lambda _event: self.finish_location_edit(row, advance=True))
-        editor.bind("<KP_Enter>", lambda _event: self.finish_location_edit(row, advance=True))
         editor.bind("<<ComboboxSelected>>", lambda _event: self.finish_location_edit(row))
         editor.bind("<Escape>", self.defocus_field)
         self.bind_editor_navigation(editor, item_id)
+        self.bind_location_suggestions(editor, value, choices, row, item_id)
         return "break"
+    def bind_location_suggestions(self, editor, value, choices, row, item_id):
+        # The native combobox popup takes keyboard input away from the entry.
+        # Keep suggestions in the table so the user can continue typing.
+        suggestions = tk.Listbox(
+            self.tree, exportselection=False, takefocus=False, font=self.sample_list_font,
+            background=self.colors["panel"], foreground=self.colors["text"],
+            selectbackground=self.colors["accent"],
+            selectforeground=contrasting_text_color(self.colors["accent"]),
+        )
+        folded_choices = [(choice, choice.casefold()) for choice in choices]
+
+        def position_suggestions():
+            above = editor.winfo_y()
+            below = self.tree.winfo_height() - above - editor.winfo_height()
+            height = suggestions.winfo_reqheight()
+            if height > below and above > below:
+                suggestions.place(in_=editor, anchor="sw", relwidth=1, height=min(height, above))
+            else:
+                suggestions.place(in_=editor, rely=1, relwidth=1, height=min(height, below))
+            suggestions.lift()
+
+        def update_suggestions(*_):
+            query = value.get().strip().casefold()
+            matches = [choice for choice, folded in folded_choices if query and query in folded]
+            suggestions.delete(0, "end")
+            if not matches:
+                suggestions.place_forget()
+                return
+            suggestions.insert("end", *matches)
+            suggestions.configure(height=min(6, len(matches)))
+            position_suggestions()
+
+        def move_selection(direction):
+            if not suggestions.winfo_ismapped():
+                return self.move_editor_focus(item_id, direction)
+            selected = suggestions.curselection()
+            index = selected[0] + direction if selected else (0 if direction > 0 else suggestions.size() - 1)
+            index = max(0, min(index, suggestions.size() - 1))
+            suggestions.selection_clear(0, "end")
+            suggestions.selection_set(index)
+            suggestions.see(index)
+            return "break"
+
+        def accept(event):
+            if event.widget == suggestions:
+                index = suggestions.nearest(event.y)
+                bounds = suggestions.bbox(index)
+                if bounds and bounds[1] <= event.y < bounds[1] + bounds[3]:
+                    editor.set(suggestions.get(index))
+                    return self.finish_location_edit(row)
+                return "break"
+            selected = suggestions.curselection()
+            if suggestions.winfo_ismapped() and selected:
+                editor.set(suggestions.get(selected[0]))
+            return self.finish_location_edit(row, advance=True)
+
+        def cleanup(_event):
+            value.trace_remove("write", trace)
+            if suggestions.winfo_exists():
+                suggestions.destroy()
+
+        trace = value.trace_add("write", update_suggestions)
+        editor.configure(postcommand=suggestions.place_forget)
+        editor.bind("<Configure>", lambda _event: position_suggestions() if suggestions.place_info() else None)
+        editor.bind("<Destroy>", cleanup, add=True)
+        editor.bind("<Up>", lambda _event: move_selection(-1))
+        editor.bind("<Down>", lambda _event: move_selection(1))
+        editor.bind("<Return>", accept)
+        editor.bind("<KP_Enter>", accept)
+        suggestions.bind("<Button-1>", accept)
     def edit_amount_cell(self, row, item_id):
         self.cancel_amount_edit()
         self.editing_rows = self.selected_edit_rows(row)
@@ -1869,6 +1940,7 @@ class SampleManager(tk.Tk):
         editor.bind("<Destroy>", lambda _event: value.trace_remove("write", resize))
         self.editing_cell = (item_id, column)
         self.reposition_active_editor(editor)
+        return value
     def reposition_active_editor(self, editor=None):
         if not self.editing_cell: return
         editor = editor or self.amount_editor
