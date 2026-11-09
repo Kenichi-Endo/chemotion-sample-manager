@@ -328,6 +328,16 @@ def test_last_modified_display_converts_localized_timestamp_with_nbsp_and_suffix
     assert inventory.format_last_modified(value) == "2026-09-09 11:48:44"
 
 
+@pytest.mark.parametrize("value", ["09.11.2026, 11:50:12 +0000",
+                                   "09.11.2026, 12:50:12 +01:00",
+                                   "09.11.2026, 06:20:12 -0530"])
+def test_relative_date_respects_chemotions_localized_numeric_offset(value):
+    timestamp = inventory.parse_last_modified("2026-11-09T11:50:12Z").timestamp()
+
+    assert inventory.parse_last_modified(value).timestamp() == timestamp
+    assert inventory.format_relative_date(value, timestamp + 180) == "3 minutes ago"
+
+
 def test_last_modified_is_formatted_at_the_final_display_step():
     row = {
         "last_modified": "09.09.2026, 11:48:44",

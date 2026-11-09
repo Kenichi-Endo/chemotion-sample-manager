@@ -70,16 +70,19 @@ def parse_localized_last_modified(value):
     """Parse Chemotion's localized German date/time representation, if present."""
     raw_value = str(value).strip().replace("\u00a0", " ")
     # Chemotion can localize this value before returning it. Match the visible
-    # German form first, tolerating a non-breaking space and trailing locale or
-    # time-zone text.
+    # German form with optional numeric offset, tolerating non-breaking spaces
+    # and trailing locale text.
     localized = re.match(
-        r"^(\d{1,2})\.(\d{1,2})\.(\d{4})\s*,?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?",
+        r"^(\d{1,2})\.(\d{1,2})\.(\d{4})\s*,?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?"
+        r"(?:\s*([+-]\d{2}:?\d{2}))?",
         raw_value,
     )
     if not localized:
         return None
-    day, month, year, hour, minute, second = localized.groups()
-    return datetime(int(year), int(month), int(day), int(hour), int(minute), int(second or 0))
+    day, month, year, hour, minute, second, offset = localized.groups()
+    date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+    time = f"{hour.zfill(2)}:{minute}:{second or '00'}"
+    return datetime.fromisoformat(f"{date}T{time}{offset or ''}")
 
 
 def format_last_modified(value):
@@ -98,7 +101,22 @@ def format_last_modified(value):
         return re.sub(r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2})?)", r"\1 \2", raw_value)
 
 
-def displayed_row_value(row, key):
+def format_relative_date(value, now):
+    """Describe the elapsed time from a Chemotion timestamp."""
+    try:
+        elapsed = now - parse_last_modified(value).timestamp()
+    except (ValueError, OSError, OverflowError):
+        return format_last_modified(value)
+    for unit, seconds in (("year", 365 * 86400), ("month", 30 * 86400), ("day", 86400),
+                          ("hour", 3600), ("minute", 60)):
+        count = int(abs(elapsed) // seconds)
+        if count:
+            duration = f"{count} {unit}{'s' if count != 1 else ''}"
+            return f"{duration} ago" if elapsed >= 0 else f"in {duration}"
+    return "Just now"
+
+
+def displayed_row_value(row, key, *, relative_to=None):
     """Return the final display value for one inventory field."""
     if key == "structure":
         return ""
@@ -106,7 +124,10 @@ def displayed_row_value(row, key):
         value = row.get(key)
         return "" if value is None or str(value).strip() in {"", "—"} or is_zero_amount(value) else str(value)
     if key in {"last_modified", "created"}:
-        return format_last_modified(row.get(f"{key}_at", row.get(key)))
+        value = row.get(f"{key}_at", row.get(key))
+        if relative_to is not None and value:
+            return format_relative_date(value, relative_to)
+        return format_last_modified(value)
     return shown(row.get(key))
 
 

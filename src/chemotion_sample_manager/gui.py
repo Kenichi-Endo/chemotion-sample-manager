@@ -533,6 +533,7 @@ class SampleManager(tk.Tk):
             saved_font_size = 18
         self.sample_list_font.configure(size=saved_font_size)
         self.font_size_value = tk.StringVar(value=str(saved_font_size))
+        self.relative_date_value = tk.BooleanVar(value=self.profile_settings.get("relative_date") is not False)
         self.structure_size = self.profile_settings.get("structure_size", 50)
         if type(self.structure_size) is not int or not 20 <= self.structure_size <= 200:
             self.structure_size = 50
@@ -550,9 +551,14 @@ class SampleManager(tk.Tk):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
         self.top = tk.Frame(self, padx=12, pady=8); self.top.grid(row=0, column=0, sticky="ew")
-        self.controls = tk.Frame(self.top); self.controls.pack(anchor="w", pady=(8, 0))
+        self.controls = tk.Frame(self.top); self.controls.pack(fill="x", pady=(8, 0))
         self.login_controls = tk.Frame(self.controls); self.login_controls.pack(anchor="w")
-        self.location_controls = tk.Frame(self.controls); self.location_controls.pack(anchor="w", pady=(6, 0))
+        self.inventory_controls = tk.Frame(self.controls)
+        self.inventory_controls.pack(fill="x", pady=(6, 0))
+        self.display_controls = tk.Frame(self.inventory_controls)
+        self.display_controls.grid(row=0, column=0, sticky="w")
+        self.location_controls = tk.Frame(self.inventory_controls)
+        self.location_controls.grid(row=0, column=1, sticky="w")
 
         ttk.Label(self.login_controls, text="Server:").pack(side="left", padx=(4,0)); self.server_entry = ttk.Entry(self.login_controls, textvariable=self.server_value, width=28); self.server_entry.pack(side="left", padx=4)
         credential_controls = ttk.Frame(self.login_controls)
@@ -604,11 +610,11 @@ class SampleManager(tk.Tk):
         self.refresh_button = ttk.Button(loading_controls, text="Go", command=self.refresh)
         self.refresh_button.pack(pady=(4, 0))
 
-        self.columns_button = ttk.Menubutton(self.location_controls, text="Columns")
+        self.columns_button = ttk.Menubutton(self.display_controls, text="Columns")
         self.columns_menu = tk.Menu(self.columns_button, tearoff=False)
         self.columns_button.configure(menu=self.columns_menu); self.columns_button.pack(side="left", padx=4)
-        ttk.Label(self.location_controls, text="Structure size:").pack(side="left", padx=(12, 0))
-        self.structure_size_spinbox = ttk.Spinbox(self.location_controls, from_=20, to=200,
+        ttk.Label(self.display_controls, text="Structure size:").pack(side="left", padx=(12, 0))
+        self.structure_size_spinbox = ttk.Spinbox(self.display_controls, from_=20, to=200,
                                                  textvariable=self.structure_size_value, width=3)
         self.structure_size_spinbox.pack(side="left", padx=4)
         for entry in (self.server_entry, self.username_entry, self.password_entry):
@@ -616,13 +622,18 @@ class SampleManager(tk.Tk):
         self.structure_size_spinbox.bind("<Return>", self.finish_structure_size_edit)
         self.structure_size_spinbox.bind("<KP_Enter>", self.finish_structure_size_edit)
         self.structure_size_spinbox.bind("<FocusOut>", self.finish_structure_size_edit)
-        ttk.Label(self.location_controls, text="Font size:").pack(side="left", padx=(12, 0))
-        self.font_size_spinbox = ttk.Spinbox(self.location_controls, from_=8, to=48,
+        ttk.Label(self.display_controls, text="Font size:").pack(side="left", padx=(12, 0))
+        self.font_size_spinbox = ttk.Spinbox(self.display_controls, from_=8, to=48,
                                              textvariable=self.font_size_value, width=3)
         self.font_size_spinbox.pack(side="left", padx=4)
         self.font_size_spinbox.bind("<Return>", self.finish_font_size_edit)
         self.font_size_spinbox.bind("<KP_Enter>", self.finish_font_size_edit)
         self.font_size_spinbox.bind("<FocusOut>", self.finish_font_size_edit)
+        self.relative_date_checkbutton = ttk.Checkbutton(
+            self.display_controls, text="Relative date", variable=self.relative_date_value,
+            command=self.change_relative_date,
+        )
+        self.relative_date_checkbutton.pack(side="left", padx=4)
         column_labels = dict(zip(self.keys, self.headings))
         selector_keys = self.column_menu_order
         for key in selector_keys: self.columns_menu.add_checkbutton(label=column_labels[key], variable=self.column_visibility[key], command=lambda key=key: self.toggle_column(key))
@@ -656,6 +667,8 @@ class SampleManager(tk.Tk):
         self.export_button.pack(side="left", padx=4)
         self.export_status = ttk.Label(self.location_controls, text="")
         self.export_status.pack(side="left", padx=4)
+        self.inventory_controls.bind("<Configure>", self.layout_inventory_controls)
+        self.location_controls.bind("<Configure>", self.layout_inventory_controls)
         self.queued_exports = 0
         self.structure_image_variants = {}
         self.structure_images = {}; self.structure_image_pending = set(); self.structure_image_queue = deque(); self.structure_image_queue_lock = threading.Lock(); self.structure_image_worker_active = False; self.structure_image_waiters = {}; self.structure_rows_pending = set()
@@ -728,7 +741,9 @@ class SampleManager(tk.Tk):
         accent = system_accent_color()
         if not force and dark == self.dark_mode and accent == self.colors.get("accent"): return
         self.dark_mode = dark; self.colors = self.appearance_colors(dark); self.colors["accent"] = accent; c = self.colors; self.configure(bg=c["base"])
-        for item in (self.top, self.status_area, self.controls, self.login_controls, self.location_controls, self.progress_area): item.configure(bg=c["base"])
+        for item in (self.top, self.status_area, self.controls, self.login_controls, self.inventory_controls,
+                     self.display_controls, self.location_controls, self.progress_area):
+            item.configure(bg=c["base"])
         self.status.configure(bg=c["base"])
         self.collection_menu.configure(background=c["panel"], foreground=c["text"],
                                        selectbackground=accent, selectforeground=contrasting_text_color(accent))
@@ -750,6 +765,14 @@ class SampleManager(tk.Tk):
         colors["base"] = self.style.lookup("TLabel", "background") or colors["base"]
         return colors
     def watch_system_appearance(self): self.apply_appearance(); self.after(1500,self.watch_system_appearance)
+    def layout_inventory_controls(self, _event):
+        required_width = self.display_controls.winfo_reqwidth() + self.location_controls.winfo_reqwidth()
+        wrap = required_width > self.inventory_controls.winfo_width()
+        row = 1 if wrap else 0
+        if self.location_controls.grid_info()["row"] != row:
+            self.location_controls.grid_configure(
+                row=row, column=0 if wrap else 1, pady=(6, 0) if wrap else 0,
+            )
     def visible_column_keys(self):
         return tuple(key for key in self.column_order if self.column_visibility[key].get())
     def maximize_window(self):
@@ -828,6 +851,14 @@ class SampleManager(tk.Tk):
         save_profile_settings(self.profile_settings)
     def finish_font_size_edit(self, _event=None):
         self.font_size_value.set(str(self.sample_list_font.cget("size")))
+    def change_relative_date(self):
+        self.profile_settings["relative_date"] = self.relative_date_value.get()
+        save_profile_settings(self.profile_settings)
+        displayed_ids = set(self.tree.get_children())
+        for row in self.rows:
+            item_id = str(row["id"])
+            if item_id in displayed_ids:
+                self.tree.item(item_id, values=self.row_values(row))
     def toggle_column(self, key):
         if not self.visible_column_keys():
             self.column_visibility[key].set(True)
@@ -1305,8 +1336,9 @@ class SampleManager(tk.Tk):
         except re.error:
             return []
         visible_keys = set(self.visible_column_keys()) - {"structure"}
+        # Date searches keep using absolute timestamps when the display changes.
         return [row for row in rows if any(
-            pattern.search(str(value))
+            pattern.search(str(displayed_row_value(row, key) if key in {"last_modified", "created"} else value))
             for key, value in zip(self.keys, self.row_values(row)) if key in visible_keys
         )]
     def render_rows(self, preserve_display_order=False):
@@ -1374,10 +1406,14 @@ class SampleManager(tk.Tk):
             self.reposition_active_editor()
     def row_values(self, row):
         checkbox = lambda value: "☑" if value else "☐"
+        relative_date = getattr(self, "relative_date_value", None)
+        relative_to = time.time() if relative_date is not None and relative_date.get() else None
+        modified = displayed_row_value(row, "last_modified", relative_to=relative_to)
+        created = displayed_row_value(row, "created", relative_to=relative_to)
         # Treeview fonts apply to an entire row, not an individual column.  Keep
         # inventory numbers in the native table font instead of substituting
         # Unicode mathematical "bold" digits, which macOS renders in another face.
-        return (str(row["label"]), displayed_row_value(row, "collection"), row["location"], displayed_row_value(row, "structure"), row["molecule"], displayed_row_value(row, "density"), row["sample"], row["vendor"], row["amount"], displayed_row_value(row, "last_modified"), displayed_row_value(row, "created"), checkbox(row["decoupled"]), checkbox(row["inventory_sample"]))
+        return (str(row["label"]), displayed_row_value(row, "collection"), row["location"], displayed_row_value(row, "structure"), row["molecule"], displayed_row_value(row, "density"), row["sample"], row["vendor"], row["amount"], modified, created, checkbox(row["decoupled"]), checkbox(row["inventory_sample"]))
     def load_structure_images(self, rows):
         """Queue missing structures with at most eight image workers."""
         with self.structure_image_queue_lock:
