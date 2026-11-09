@@ -206,6 +206,75 @@ def test_library_save_retains_null_sample_structure(client, sample_server):
     assert body["molfile"] is None
 
 
+@pytest.mark.parametrize("method, args", [
+    ("set_location", ("New", {}, False, True)),
+    ("set_amount", ("real_amount", "5", "mg", {}, False, True)),
+    ("set_sample_flags", ({}, False, True)),
+])
+@pytest.mark.parametrize("status, permission, lookup_status, expected_reads, error_type, message", [
+    (401, False, 200, 2, PermissionError, "does not have write permission"),
+    (403, False, 200, 2, PermissionError, "does not have write permission"),
+    (401, True, 200, 2, ConnectionError, "Chemotion returned 401"),
+    (401, None, 200, 2, ConnectionError, "Chemotion returned 401"),
+    (401, None, 401, 2, ConnectionError, "Chemotion returned 401"),
+    (422, False, 200, 1, ConnectionError, "Chemotion returned 422"),
+])
+def test_sample_write_checks_permission_after_rejection(
+        client, sample_server, monkeypatch, method, args, status, permission, lookup_status,
+        expected_reads, error_type, message):
+    sample, _calls = sample_server
+    send_sample_response = client.connection.send
+    sample_requests = []
+
+    def send(request, **kwargs):
+        path = urlsplit(request.url).path
+        if path in {"/api/v1/samples/7", "/api/v1/samples/7.json"}:
+            sample_requests.append(request.method)
+            if request.method == "PUT" or (len(sample_requests) == 3 and lookup_status != 200):
+                response = Response()
+                response.request = request
+                response.status_code = status if request.method == "PUT" else lookup_status
+                response._content = b'{"error":"Request rejected"}'
+                return response
+            if len(sample_requests) == 3 and permission is not None:
+                sample["can_update"] = permission
+        return send_sample_response(request, **kwargs)
+
+    monkeypatch.setattr(client.connection, "send", send)
+
+    with pytest.raises(error_type, match=message):
+        getattr(client, method)(7, *args)
+
+    assert sample_requests == ["GET", "PUT"] + ["GET"] * (expected_reads - 1)
+
+
+@pytest.mark.parametrize("chemical_id, method, path", [
+    (None, "POST", "/api/v1/chemicals/create"),
+    (5, "PUT", "/api/v1/chemicals"),
+])
+def test_vendor_write_checks_sample_permission_after_rejection(
+        client, sample_server, monkeypatch, chemical_id, method, path):
+    sample, _calls = sample_server
+    sample["can_update"] = False
+    send_sample_response = client.connection.send
+    requests = []
+
+    def send(request, **kwargs):
+        requests.append((request.method, urlsplit(request.url).path))
+        if request.method == "GET":
+            return send_sample_response(request, **kwargs)
+        response = Response()
+        response.request = request
+        response.status_code = 403
+        response._content = b'{"error":"Request rejected"}'
+        return response
+
+    monkeypatch.setattr(client.connection, "send", send)
+    with pytest.raises(PermissionError, match="does not have write permission"):
+        client.set_vendor(7, [], "Vendor", chemical_id=chemical_id)
+    assert requests == [(method, path), ("GET", "/api/v1/samples/7.json")]
+
+
 @pytest.mark.parametrize("shared", [False, True])
 def test_collection_picker_uses_library_trees_and_retains_all(client, monkeypatch, shared):
     paths = []

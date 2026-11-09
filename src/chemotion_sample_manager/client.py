@@ -8,6 +8,7 @@ import io
 import zipfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from contextlib import contextmanager
 from pathlib import Path
 from queue import Empty, Queue
 from urllib.parse import urlencode
@@ -517,6 +518,27 @@ class ChemotionClient:
     def set_location(self, sample_id, location, container, decoupled, inventory_sample):
         """Set one location while preserving flags defaulted by Chemotion's API."""
         self._save_sample(sample_id, {"location": location})
+
+    @contextmanager
+    def _sample_write(self, sample_id):
+        try:
+            yield
+        except ConnectionError as error:
+            rejection = error.__cause__
+            if (getattr(rejection, "status_code", None) in {401, 403}
+                    and getattr(rejection, "method", None) in {"POST", "PUT"}
+                    and self._sample_write_denied(sample_id)):
+                raise PermissionError("The signed-in account does not have write permission for this sample.") from error
+            raise
+
+    def _sample_write_denied(self, sample_id):
+        """Check the signed-in account's sample policy after a rejected write."""
+        try:
+            payload = json.loads(self.request(f"/api/v1/samples/{sample_id}.json"))
+        except (ConnectionError, ValueError):
+            return False
+        return as_dict(as_dict(payload).get("sample")).get("can_update") is False
+
     def set_amount(self, sample_id, field, value, unit, container, decoupled, inventory_sample):
         """Update one amount while preserving the sample's other editable flags."""
         self._save_sample(sample_id, {field: {"value": str(value), "unit": unit}})
@@ -544,7 +566,8 @@ class ChemotionClient:
         # Inventory edits must retain the sample's own structure, even if null.
         if "molfile" in sample.json_data:
             sample.molecule["molfile"] = sample.json_data["molfile"]
-        sample.save()
+        with self._sample_write(sample_id):
+            sample.save()
     def remove_sample_from_collection(self, collection_id, sample_id, synchronized=False, source_collection_id=None):
         """Remove one sample's membership in a collection without deleting it."""
         root = self.instance.get_root_collection(reload=False)
@@ -586,6 +609,7 @@ class ChemotionClient:
             payload["cas"] = cas or ""
             method = "POST"
         body = json.dumps(payload).encode("utf-8")
-        self.request(path, body,
-                     {"Accept": "application/json", "Content-Type": "application/json"}, method=method)
+        with self._sample_write(sample_id):
+            self.request(path, body,
+                         {"Accept": "application/json", "Content-Type": "application/json"}, method=method)
 

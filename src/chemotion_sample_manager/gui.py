@@ -480,6 +480,16 @@ class ColumnDragFeedback:
         self.marker.place_forget()
 
 
+def show_bulk_edit_failures(summary, failures):
+    details = []
+    for row, error in failures[:5]:
+        label = row.get("label")
+        if not label or label == "—":
+            label = f"Sample ID {row['id']}"
+        details.append(f"{label}: {error}")
+    messagebox.showerror(APP_NAME, summary + "\n\n" + "\n".join(details))
+
+
 class SampleManager(tk.Tk):
     headings = INVENTORY_HEADINGS
     keys = INVENTORY_KEYS
@@ -1770,7 +1780,7 @@ class SampleManager(tk.Tk):
         changed = len(selected_rows) - len(failures)
         if failures:
             self.status.configure(text=f"Updated {label} for {changed} of {len(selected_rows)} samples; {len(failures)} could not be changed.", fg=self.colors["error"])
-            messagebox.showerror(APP_NAME, "Some samples could not be changed:\n\n" + "\n".join(f"{row['sample']}: {error}" for row, error in failures[:5]))
+            show_bulk_edit_failures("Some samples could not be changed:", failures)
         else:
             self.status.configure(text=f"Set {label} to {'checked' if value else 'unchecked'} for {changed} sample{'s' if changed != 1 else ''}.", fg=self.colors["muted"])
     def _flags_change_failed(self, label, error):
@@ -2037,7 +2047,7 @@ class SampleManager(tk.Tk):
         if self.selected_row_ids: self.tree.selection_set(tuple(self.selected_row_ids & set(self.tree.get_children())))
         if failures:
             self.status.configure(text=f"Updated {label} for {changed} of {len(rows)} samples; {len(failures)} could not be changed.", fg=self.colors["error"])
-            messagebox.showerror(APP_NAME, "Some samples could not be changed:\n\n" + "\n".join(f"{row['sample']}: {error}" for row, error in failures[:5]))
+            show_bulk_edit_failures("Some samples could not be changed:", failures)
         else:
             self.status.configure(text=f"Updated the {label} for {changed} sample{'s' if changed != 1 else ''}.", fg=self.colors["muted"])
         self.edit_saved_next_cell()
@@ -2080,13 +2090,7 @@ class SampleManager(tk.Tk):
         changed = len(selected_rows) - len(failures)
         if failures:
             self.status.configure(text=f"Changed {changed} of {len(selected_rows)} locations; {len(failures)} could not be changed.", fg=self.colors["error"])
-            details = []
-            for row, error in failures[:5]:
-                label = row.get("label")
-                if not label or label == "—":
-                    label = f"Sample ID {row['id']}"
-                details.append(f"{label}: {error}")
-            messagebox.showerror(APP_NAME, "Some locations could not be changed:\n\n" + "\n".join(details))
+            show_bulk_edit_failures("Some locations could not be changed:", failures)
         else: self.status.configure(text=f"Changed the location of {changed} item{'s' if changed != 1 else ''} to {location}.", fg=self.colors["muted"])
         self.edit_saved_next_cell()
     def _locations_change_failed(self, error):

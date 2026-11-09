@@ -325,7 +325,13 @@ def test_location_cell_commit_updates_selection_and_preserves_flags(monkeypatch)
     assert callbacks[-1] == (0, viewer._locations_changed, rows, "New", [])
 
 
-def test_location_failure_identifies_samples_by_short_label_or_id(monkeypatch):
+@pytest.mark.parametrize("callback, before_failures, after_failures, subject", [
+    ("_locations_changed", ("New",), (), "locations"),
+    ("_flags_changed", ("decoupled", True, "Decoupled"), (), "samples"),
+    ("_batch_edit_finished", (), ("amount",), "samples"),
+])
+def test_bulk_failure_identifies_samples_by_short_label_or_id(
+        monkeypatch, callback, before_failures, after_failures, subject):
     rows = [
         inventory.inventory_row({"id": 7, "short_label": "INV-7"}),
         inventory.inventory_row({"id": 8, "name": "Named sample"}),
@@ -342,8 +348,9 @@ def test_location_failure_identifies_samples_by_short_label_or_id(monkeypatch):
     )
     error = 'Chemotion returned 401: {"error":"401 Unauthorized"}'
 
-    app.SampleManager._locations_changed(viewer, rows, "New", [(row, error) for row in rows])
+    failures = [(row, error) for row in rows]
+    getattr(app.SampleManager, callback)(viewer, rows, *before_failures, failures, *after_failures)
 
     assert messages == [
-        f"Some locations could not be changed:\n\nINV-7: {error}\nSample ID 8: {error}"
+        f"Some {subject} could not be changed:\n\nINV-7: {error}\nSample ID 8: {error}"
     ]
