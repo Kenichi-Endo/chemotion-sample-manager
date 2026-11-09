@@ -646,7 +646,7 @@ class SampleManager(tk.Tk):
         ttk.Label(self.location_controls, text="Location:").pack(side="left", padx=(12, 0))
         self.location_filter_menu = ttk.OptionMenu(self.location_controls, self.location_filter,
                                                    self.location_filter.get(), "All locations",
-                                                   command=self.filter_by_location)
+                                                   command=self.location_filter_selected)
         self.location_filter_menu.pack(side="left", padx=4)
         self.print_button = ttk.Button(self.location_controls, text="Print…", command=self.printable, state="disabled"); self.print_button.pack(side="left", padx=4)
         self.export_button = ttk.Button(self.location_controls, text="Export collection…", command=self.export_collection, state="disabled")
@@ -1247,6 +1247,9 @@ class SampleManager(tk.Tk):
         self.profile_settings["text_filter"] = self.text_filter.get()
         self.profile_settings["location_filter"] = self.location_filter.get()
         save_profile_settings(self.profile_settings)
+    def location_filter_selected(self, _location):
+        self.filter_by_location()
+        self.tree.focus_set()
     def filter_by_location(self, _event=None):
         self.edit_display_row_ids = None
         self.location_filter_retained_row_ids.clear()
