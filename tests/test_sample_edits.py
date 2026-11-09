@@ -110,34 +110,19 @@ def test_location_filter_deselects_hidden_samples_without_restoring_them():
     assert selection == viewer.selected_row_ids == {"1"}
 
 
-@pytest.mark.parametrize("failure", [False, True])
-def test_opened_sample_refresh_fetches_current_record(monkeypatch, failure):
-    row = {"id": 2, "label": "Sample", "collection_id": 7, "synchronized": True}
-    refreshed = dict(row, location="New location")
-    calls = []
-
-    class Client:
-        def login(self):
-            calls.append("login")
-
-        def inventory_entry(self, *args):
-            calls.append(args)
-            if failure:
-                raise RuntimeError("Unavailable")
-            return refreshed
-
-    monkeypatch.setattr(app, "ChemotionClient", Client)
+@pytest.mark.parametrize("synchronized, route", [(False, "collection"), (True, "scollection")])
+def test_double_click_opens_sample_without_refresh(monkeypatch, synchronized, route):
+    opened_urls = []
+    monkeypatch.setattr(app.client, "CHEMOTION_URL", "https://eln.example.org")
+    monkeypatch.setattr(app.webbrowser, "open_new_tab", opened_urls.append)
     viewer = SimpleNamespace(
-        after=lambda *args: calls.append(args),
-        _entry_refreshed=object(), _opened_sample_refresh_failed=object(),
+        tree=SimpleNamespace(identify_row=lambda y: "2"),
+        displayed_column_key=lambda event: "label",
+        rows=[{"id": 2, "collection_id": 7, "synchronized": synchronized}],
     )
-    app.SampleManager._refresh_opened_sample(viewer, row)
-    assert calls[:2] == ["login", (2, 7, True)]
-    if failure:
-        assert calls[2] == (0, viewer._opened_sample_refresh_failed, "Unavailable")
-    else:
-        assert calls[2][:4] == (0, viewer._entry_refreshed, row, refreshed)
-    assert "location" not in row  # Row changes must wait for the UI callback.
+
+    assert app.SampleManager.open_sample(viewer, SimpleNamespace(y=10)) == "break"
+    assert opened_urls == [f"https://eln.example.org/mydb/{route}/7/sample/2"]
 
 
 @pytest.mark.parametrize("item_id, field, direction, expected", [

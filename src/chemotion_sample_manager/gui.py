@@ -1789,22 +1789,7 @@ class SampleManager(tk.Tk):
             return "break"
         route = "scollection" if row.get("synchronized") else "collection"
         webbrowser.open_new_tab(f"{client.CHEMOTION_URL}/mydb/{route}/{collection_id}/sample/{row['id']}")
-        self.set_controls_busy(True); self.print_button.configure(state="disabled"); self.show_progress()
-        self.status.configure(text=f"Opened {row['label']} in Chemotion; refreshing sample…", fg=self.colors["accent"])
-        threading.Thread(target=self._refresh_opened_sample, args=(row,), daemon=True).start()
         return "break"
-    def _refresh_opened_sample(self, row):
-        try:
-            client = ChemotionClient(); client.login()
-            refreshed = client.inventory_entry(row["id"], row.get("collection_id"), row.get("synchronized", False))
-            self.after(0, self._entry_refreshed, row, refreshed, "")
-        except Exception as error:
-            self.after(0, self._opened_sample_refresh_failed, str(error))
-    def _opened_sample_refresh_failed(self, error):
-        self.hide_progress(); self.set_controls_busy(False)
-        self.print_button.configure(state="normal" if self.rows else "disabled")
-        self.status.configure(text="Chemotion opened, but the sample information could not be refreshed.", fg=self.colors["error"])
-        messagebox.showerror(APP_NAME, error)
     def cancel_amount_edit(self):
         if self.amount_editor:
             editor, self.amount_editor = self.amount_editor, None
@@ -1997,23 +1982,6 @@ class SampleManager(tk.Tk):
         self.render_rows(preserve_display_order=True); self.hide_progress(); self.set_controls_busy(False)
         self.print_button.configure(state="normal" if self.rows else "disabled")
         self.status.configure(text=f"Updated the {field} name for {row['label']}.", fg=self.colors["muted"])
-        self.edit_saved_next_cell()
-    def _entry_refreshed(self, row, refreshed, status):
-        """Replace an edited row with Chemotion's authoritative current record."""
-        selected_ids = set(self.selected_row_ids)
-        selected_ids.add(str(row["id"]))
-        replace_inventory_row(row, refreshed)
-        self.render_rows(preserve_display_order=True)
-        visible_ids = set(self.tree.get_children())
-        selected_ids.intersection_update(visible_ids)
-        if selected_ids:
-            self.tree.selection_set(tuple(selected_ids))
-            self.tree.focus(str(row["id"]))
-            self.tree.see(str(row["id"]))
-        self.selected_row_ids = selected_ids
-        self.hide_progress(); self.set_controls_busy(False)
-        self.print_button.configure(state="normal" if self.rows else "disabled")
-        self.status.configure(text=status, fg=self.colors["muted"])
         self.edit_saved_next_cell()
     def _name_change_failed(self, label, error):
         self.edit_after_save = None
