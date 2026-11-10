@@ -690,10 +690,10 @@ class SampleManager(tk.Tk):
                       self.collection_menu, self.location_filter_menu,
                       self.font_size_spinbox, self.structure_size_spinbox):
             field.bind("<Escape>", self.defocus_field)
-        self.tree.bind("<Command-a>", self.select_all_visible)
         self.tree.bind("<Escape>", self.deselect_all_rows)
         self.tree.bind("<Delete>", self.delete_selected_row)
         selection_modifier = multi_selection_modifier(self.tk.call("tk", "windowingsystem"))
+        self.tree.bind(f"<{selection_modifier}-a>", self.select_all_visible)
         self.tree.bind(f"<{selection_modifier}-Button-1>", self.extend_edit_selection)
         self.tree.bind(f"<{selection_modifier}-Double-Button-1>", self.extend_edit_selection)
         self.tree.bind("<Shift-Button-1>", self.extend_edit_selection)
