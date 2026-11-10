@@ -265,6 +265,25 @@ def test_inventory_row_keeps_the_complete_short_label():
     assert row["label"] == "INV-114"
 
 
+@pytest.mark.parametrize("molecule_name, expected", [
+    ("C6D6", "C6D6"),
+    ("Benzene-d6", "Benzene-d6"),
+    (None, "1,2,3,4,5,6-hexadeuteriobenzene"),
+])
+def test_inventory_row_prefers_selected_molecule_name(molecule_name, expected):
+    iupac_name = "1,2,3,4,5,6-hexadeuteriobenzene"
+    row = inventory.inventory_row({
+        "showed_name": iupac_name,
+        "name": "Stock sample",
+        "molecule_name_hash": {"label": molecule_name, "value": 42},
+        "molecule": {"sum_formular": "C6D6", "iupac_name": iupac_name},
+    })
+
+    assert row["molecule"] == expected
+    assert row["molecule_name_id"] == 42
+    assert row["sample"] == "Stock sample"
+
+
 def test_molecule_name_update_keeps_the_existing_inventory_row():
     row = {
         "id": 114,
