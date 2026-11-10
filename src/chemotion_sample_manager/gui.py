@@ -301,6 +301,13 @@ class InventoryTreeview(ttk.Treeview):
             kwargs["height"] = self.row_pixels
         return super().insert(parent, index, iid=iid, **kwargs)
 
+    def item(self, item, option=None, **kwargs):
+        result = super().item(item, option, **kwargs)
+        if kwargs and option is None:
+            # The clipped row is drawn separately and can go stale without scrolling.
+            self.queue_partial_refresh()
+        return result
+
 
 class TableScrollAnimation:
     """Spread input motion across redraws while retaining fractional pixels."""
@@ -676,7 +683,7 @@ class SampleManager(tk.Tk):
         self.structure_images = {}; self.structure_image_pending = set(); self.structure_image_queue = deque(); self.structure_image_queue_lock = threading.Lock(); self.structure_image_worker_active = False; self.structure_image_waiters = {}; self.structure_rows_pending = set()
         frame = ttk.Frame(self, padding=(12, 12, 12, 0), style="Inventory.TFrame"); frame.grid(row=1, column=0, sticky="nsew", padx=12); self.tree = InventoryTreeview(frame, columns=self.keys, displaycolumns=self.displayed_data_column_keys(), show="tree headings" if self.column_visibility["structure"].get() else "headings", style="Inventory.Treeview", selectmode="extended")
         self.style.pixel_tree = self.tree
-        self.tree.bind("<<TreeviewSelect>>", self.remember_selection)
+        self.tree.bind("<<TreeviewSelect>>", self.remember_selection, add="+")
         enable_table_smooth_scrolling(self.tree)
         self.bind("<KeyPress>", self.select_row_by_typing, add="+")
         for field in (self.server_entry, self.username_entry, self.password_entry,

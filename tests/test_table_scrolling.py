@@ -1,14 +1,47 @@
 """High resolution wheel gestures retain motion and stay on the intended axis."""
+from tkinter import ttk
 from types import SimpleNamespace
 
 import pytest
 
-from chemotion_sample_manager.gui import TableScrollAnimation, enable_table_smooth_scrolling
+from chemotion_sample_manager.gui import (
+    InventoryTreeview,
+    TableScrollAnimation,
+    enable_table_smooth_scrolling,
+)
 
 
 def drain(callbacks):
     while callbacks:
         callbacks.pop(0)()
+
+
+def test_item_updates_queue_one_clipped_row_redraw(monkeypatch):
+    values = {"sample": ("old",)}
+
+    def item(_tree, item_id, option, **kwargs):
+        if kwargs:
+            values[item_id] = kwargs["values"]
+        else:
+            return values[item_id]
+
+    monkeypatch.setattr(ttk.Treeview, "item", item)
+    tree = InventoryTreeview.__new__(InventoryTreeview)
+    tree.partial_frame = object()
+    tree.partial_refresh = None
+    tree.partial_scroll_timer = None
+    callbacks = []
+    tree.after = lambda _delay, callback: callbacks.append(callback) or "redraw"
+    rendered_values = []
+    tree.draw_partial_row = lambda: rendered_values.append(tree.item("sample", "values"))
+
+    assert tree.item("sample", "values") == ("old",)
+    assert not callbacks
+    tree.item("sample", values=("new",))
+    tree.item("sample", values=("newer",))
+    assert len(callbacks) == 1
+    drain(callbacks)
+    assert rendered_values == [("newer",)]
 
 
 @pytest.mark.parametrize("system, delta", [("aqua", 2), ("win32", 24)])
