@@ -16,7 +16,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = "Chemotion Sample Manager"
-RESOURCES = ROOT / f"{NAME}.app" / "Contents" / "Resources"
+RESOURCES = ROOT / "launchers" / "macos" / f"{NAME}.app" / "Contents" / "Resources"
 
 
 def build():

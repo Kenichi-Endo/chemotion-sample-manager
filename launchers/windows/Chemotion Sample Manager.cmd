@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 
-set "PROJECT_DIR=%~dp0"
+set "PROJECT_DIR=%~dp0..\..\"
 set "BOOTSTRAP=%PROJECT_DIR%src\chemotion_sample_manager\bootstrap.py"
 set "PYTHONDONTWRITEBYTECODE=1"
 

@@ -4,6 +4,6 @@
 *.toml text eol=lf
 *.yml text eol=lf
 *.cmd text eol=crlf
-"Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager" text eol=lf
+"launchers/macos/Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager" text eol=lf
 *.png binary
 *.icns binary

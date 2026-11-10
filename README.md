@@ -45,7 +45,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 ### Customizable launcher
 1. Install Python 3.14, if not installed: [Python for macOS](https://www.python.org/downloads/macos/) or [Python for Windows](https://www.python.org/downloads/windows/). On Windows, select **Add python.exe to PATH** and keep **tcl/tk and IDLE** selected during installation.
 2. Download **Source code (zip)** from [Releases](https://github.com/Kenichi-Endo/chemotion-sample-manager/releases) and extract it, or clone the repository. Keep the project folder intact when moving or sharing the app.
-3. Open `Chemotion Sample Manager.app` on macOS or double-click `Chemotion Sample Manager.cmd` on Windows. Keep an internet connection available during automatic dependency installation. The first launch may take a few minutes.
+3. Open `launchers/macos/Chemotion Sample Manager.app` on macOS or double-click `launchers\windows\Chemotion Sample Manager.cmd` on Windows. Keep an internet connection available during automatic dependency installation. The first launch may take a few minutes.
 
 If macOS says **The application “Chemotion Sample Manager.app” cannot be opened**:
 
@@ -53,7 +53,7 @@ If macOS says **The application “Chemotion Sample Manager.app” cannot be ope
 2. Run:
 
    ```sh
-   chmod +x "Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager"
+   chmod +x "launchers/macos/Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager"
    ```
 
 3. Reopen the app.
@@ -109,7 +109,7 @@ Customizable launcher logs are in `~/Library/Logs/Chemotion Sample Manager/launc
   - `printing.py` — PDF checklist generation.
   - `bootstrap.py` — Python environment and dependency setup for the customizable launchers.
   - `standalone.py` — Standalone app entry point and dependency checks.
-- `Chemotion Sample Manager.app` and `Chemotion Sample Manager.cmd` — Customizable launchers for macOS and Windows.
+- `launchers/` — Customizable launchers.
 - `scripts/` — Standalone build and macOS icon scripts.
 - `tests/` — Automated tests.
 - `pyproject.toml` — Package configuration and dependencies.

@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 
-RESOURCES = (Path(__file__).resolve().parents[1] / "Chemotion Sample Manager.app"
+RESOURCES = (Path(__file__).resolve().parents[1] / "launchers" / "macos" / "Chemotion Sample Manager.app"
              / "Contents" / "Resources")
 
 

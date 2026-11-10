@@ -7,7 +7,7 @@ on:
       - 'src/**'
       - 'scripts/build_standalone.py'
       - 'pyproject.toml'
-      - 'Chemotion Sample Manager.app/Contents/Resources/**'
+      - 'launchers/macos/Chemotion Sample Manager.app/Contents/Resources/**'
       - '.github/workflows/standalone.yml'
 
 permissions:
