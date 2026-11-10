@@ -43,6 +43,7 @@ def test_modifier_click_during_edit_updates_commit_targets(state, initial_ids, e
     rows = [{"id": number} for number in (1, 2, 3)]
     selection = set(initial_ids)
     saved = []
+    focused = []
     viewer = SimpleNamespace(
         editing_cell=("3", "vendor"),
         editing_rows=[row for row in rows if str(row["id"]) in initial_ids],
@@ -53,11 +54,12 @@ def test_modifier_click_during_edit_updates_commit_targets(state, initial_ids, e
             selection_set=lambda ids: (selection.clear(), selection.update(ids)),
             get_children=lambda: ("1", "2", "3"),
             focus=lambda *args: "1",
+            focus_set=lambda: focused.append("table"),
         ),
         _save_vendor=lambda targets, value: saved.append((targets, value)),
     )
     viewer.amount_editor.destroy = lambda: None
-    viewer.cancel_amount_edit = lambda: app.SampleManager.cancel_amount_edit(viewer)
+    viewer.cancel_amount_edit = lambda **kwargs: app.SampleManager.cancel_amount_edit(viewer, **kwargs)
     viewer.remember_selection = lambda: app.SampleManager.remember_selection(viewer)
 
     app.SampleManager.extend_edit_selection(viewer, SimpleNamespace(y=10, state=state))
@@ -66,6 +68,7 @@ def test_modifier_click_during_edit_updates_commit_targets(state, initial_ids, e
     assert viewer.selected_row_ids == {str(number) for number in expected_ids}
     expected_rows = [rows[number - 1] for number in expected_ids]
     assert saved == ([(expected_rows, "New vendor")] if expected_rows else [])
+    assert focused == (["table"] if expected_rows else [])
 
 
 def test_shift_click_replaces_range_from_last_plain_or_toggle_click():
@@ -211,7 +214,7 @@ def test_sample_name_commit_accepts_blank(value, count):
     saved = []
     viewer = SimpleNamespace(
         amount_editor=SimpleNamespace(get=lambda: value), editing_rows=rows,
-        cancel_amount_edit=lambda: None,
+        cancel_amount_edit=lambda *, return_focus: None,
         _save_sample_name=lambda *args: saved.append(args),
     )
 
@@ -225,7 +228,7 @@ def test_density_commit_normalizes_value(value, expected):
     saved = []
     viewer = SimpleNamespace(
         amount_editor=SimpleNamespace(get=lambda: value), editing_rows=rows,
-        cancel_amount_edit=lambda: None, _change_density=object(),
+        cancel_amount_edit=lambda *, return_focus: None, _change_density=object(),
         _start_sample_edit=lambda *args: saved.append(args),
     )
     app.SampleManager.finish_name_edit(viewer, rows[0], "density")
@@ -368,7 +371,8 @@ def test_location_cell_commit_updates_selection_and_preserves_flags(monkeypatch)
         _progress=object(), _locations_changed=object(), _locations_change_failed=object(),
     )
 
-    def cancel_edit():
+    def cancel_edit(*, return_focus):
+        assert return_focus
         viewer.amount_editor = None
         viewer.editing_rows = []
 

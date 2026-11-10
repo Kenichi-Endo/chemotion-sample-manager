@@ -1859,9 +1859,9 @@ class SampleManager(tk.Tk):
         rows = self.editing_rows or [row]
         if value == row[field] and len(rows) == 1:
             if advance: self.queue_next_edit(str(row["id"]), field, advance)
-            self.cancel_amount_edit(); self.edit_saved_next_cell(); return "break"
+            self.cancel_amount_edit(return_focus=True); self.edit_saved_next_cell(); return "break"
         if advance and len(rows) == 1: self.queue_next_edit(str(row["id"]), field, advance)
-        self.cancel_amount_edit()
+        self.cancel_amount_edit(return_focus=True)
         if field == "molecule": self._save_molecule_name(rows, value)
         elif field == "density": self._start_sample_edit(rows, "density", self._change_density, value or None)
         else: self._save_sample_name(rows, value)
@@ -1877,9 +1877,9 @@ class SampleManager(tk.Tk):
         rows = self.editing_rows or [row]
         if location == row["location"] and len(rows) == 1:
             if advance: self.queue_next_edit(str(row["id"]), "location", advance)
-            self.cancel_amount_edit(); self.edit_saved_next_cell(); return "break"
+            self.cancel_amount_edit(return_focus=True); self.edit_saved_next_cell(); return "break"
         if advance and len(rows) == 1: self.queue_next_edit(str(row["id"]), "location", advance)
-        self.cancel_amount_edit()
+        self.cancel_amount_edit(return_focus=True)
         self._start_sample_edit(rows, "location", self._change_locations, location)
         return "break"
     def change_selected_flags(self, item_id, field):
@@ -1951,10 +1951,12 @@ class SampleManager(tk.Tk):
     def cancel_edit_on_outside_click(self, event):
         if self.amount_editor and event.widget not in (self.vertical_scrollbar, self.horizontal_scrollbar):
             self.cancel_amount_edit()
-    def cancel_amount_edit(self):
+    def cancel_amount_edit(self, *, return_focus=False):
         if self.amount_editor:
             editor, self.amount_editor = self.amount_editor, None
             editor.destroy()
+            if return_focus:
+                self.tree.focus_set()
         self.editing_cell = None
         self.editing_rows = []
         # Consume Escape before it reaches the window's stop-loading binding.
@@ -2104,7 +2106,7 @@ class SampleManager(tk.Tk):
             return "break"
         rows = self.editing_rows or [row]
         if advance and len(rows) == 1: self.queue_next_edit(str(row["id"]), "amount", advance)
-        self.cancel_amount_edit(); self._save_amount(rows, value, unit)
+        self.cancel_amount_edit(return_focus=True); self._save_amount(rows, value, unit)
         return "break"
     def finish_vendor_edit(self, row, advance=False):
         editor = self.amount_editor
@@ -2112,7 +2114,7 @@ class SampleManager(tk.Tk):
         vendor = editor.get().strip()
         rows = self.editing_rows or [row]
         if advance and len(rows) == 1: self.queue_next_edit(str(row["id"]), "vendor", advance)
-        self.cancel_amount_edit(); self._save_vendor(rows, vendor)
+        self.cancel_amount_edit(return_focus=True); self._save_vendor(rows, vendor)
         return "break"
     def _start_sample_edit(self, rows, label, target, *values):
         self.sample_edit_saving = True
