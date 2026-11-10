@@ -2,6 +2,8 @@
 
 Chemotion Sample Manager is a desktop app based on [Chemotion API](https://github.com/Chemotion/chemotionapi) for viewing, bulk-editing, and printing [Chemotion ELN](https://chemotion.net/) sample information.
 
+> ⚠️ **Caution.** Chemotion ELN v4 has not yet been tested with Chemotion Sample Manager.
+
 ![Chemotion Sample Manager with anonymized locations and connection details](docs/images/inventory-anonymized.png)
 
 *App interface with molecule structures and selected columns. Identifying text has been anonymized.*
