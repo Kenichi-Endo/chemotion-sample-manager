@@ -725,7 +725,16 @@ class SampleManager(tk.Tk):
         for key, width in self.column_widths.items(): self.tree.column(key, width=width, minwidth=self.column_min_widths[key], stretch=False, anchor="center" if key in {"decoupled", "inventory_sample"} else "w")
         self.restore_column_widths()
         vertical = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview); horizontal = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview); self.vertical_scrollbar = vertical; self.horizontal_scrollbar = horizontal; self.tree.configure(yscrollcommand=self.tree_yview_changed, xscrollcommand=self.tree_xview_changed)
-        self.tree.grid(row=0,column=0,sticky="nsew"); vertical.grid(row=0,column=1,sticky="ns"); horizontal.grid(row=1,column=0,sticky="ew"); frame.columnconfigure(0,weight=1); frame.rowconfigure(0,weight=1)
+        # Leave rows 0 and 3 available for an editor whose cell is offscreen.
+        self.tree.grid(row=1, column=0, sticky="nsew")
+        vertical.grid(row=1, column=1, sticky="ns")
+        horizontal.grid(row=2, column=0, sticky="ew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+        self.tree.bind("<Configure>", lambda _event: self.reposition_active_editor(), add="+")
+        if self.tree.partial_frame is not None:
+            for sequence in ("<Map>", "<Configure>"):
+                self.tree.partial_frame.bind(sequence, lambda _event: self.reposition_active_editor(), add="+")
         self.progress_area = tk.Frame(self, padx=12); self.progress_area.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         self.status_area = tk.Frame(self.progress_area); self.status_area.pack(side="left", padx=(0, 12))
         self.status = StatusLabel(self.status_area, text="0 samples"); self.status.pack(anchor="w")
@@ -1676,7 +1685,7 @@ class SampleManager(tk.Tk):
         box = self.tree.bbox(item_id, "amount")
         if not box: return "break"
         x, y, width, height = box
-        editor = ttk.Entry(self.tree)
+        editor = ttk.Entry(self.tree.master)
         editor.insert(0, row["amount"] if row["amount"] not in {"", "—"} else "")
         self.place_editor(editor, item_id, "amount")
         self.amount_editor = editor
@@ -1699,7 +1708,7 @@ class SampleManager(tk.Tk):
         self.cancel_amount_edit()
         self.editing_rows = self.selected_edit_rows(row)
         if not self.tree.bbox(item_id, column): return "break"
-        editor = ttk.Combobox(self.tree, values=choices, state="normal")
+        editor = ttk.Combobox(self.tree.master, values=choices, state="normal")
         editor.set(initial_value)
         value = self.place_editor(editor, item_id, column)
         self.amount_editor = editor
@@ -1711,9 +1720,9 @@ class SampleManager(tk.Tk):
         return "break"
     def bind_choice_suggestions(self, editor, value, choices, row, item_id, finish_edit):
         # The native combobox popup takes keyboard input away from the entry.
-        # Keep suggestions in the table so the user can continue typing.
+        # Keep suggestions beside the editor so the user can continue typing.
         suggestions = tk.Listbox(
-            self.tree, exportselection=False, takefocus=False, font=self.sample_list_font,
+            editor.master, exportselection=False, takefocus=False, font=self.sample_list_font,
             background=self.colors["panel"], foreground=self.colors["text"],
             selectbackground=self.colors["accent"],
             selectforeground=contrasting_text_color(self.colors["accent"]),
@@ -1721,13 +1730,13 @@ class SampleManager(tk.Tk):
         folded_choices = [(choice, choice.casefold()) for choice in choices]
 
         def position_suggestions():
-            above = editor.winfo_y()
+            above = editor.winfo_y() - self.tree.winfo_y()
             below = self.tree.winfo_height() - above - editor.winfo_height()
             height = suggestions.winfo_reqheight()
             if height > below and above > below:
-                suggestions.place(in_=editor, anchor="sw", relwidth=1, height=min(height, above))
+                suggestions.place(in_=editor, anchor="sw", rely=0, relwidth=1, height=min(height, above))
             else:
-                suggestions.place(in_=editor, rely=1, relwidth=1, height=min(height, below))
+                suggestions.place(in_=editor, anchor="nw", rely=1, relwidth=1, height=min(height, below))
             suggestions.lift()
 
         def update_suggestions(*_):
@@ -1785,7 +1794,7 @@ class SampleManager(tk.Tk):
         box = self.tree.bbox(item_id, "amount")
         if not box: return "break"
         x, y, width, height = box
-        editor = ttk.Entry(self.tree)
+        editor = ttk.Entry(self.tree.master)
         editor.insert(0, row["amount"] if row["amount"] not in {"", "—"} else "")
         self.place_editor(editor, item_id, "amount")
         self.amount_editor = editor
@@ -1802,7 +1811,7 @@ class SampleManager(tk.Tk):
         box = self.tree.bbox(item_id, field)
         if not box: return "break"
         x, y, width, height = box
-        editor = ttk.Entry(self.tree); editor.insert(0, "" if row[field] == "—" else row[field])
+        editor = ttk.Entry(self.tree.master); editor.insert(0, "" if row[field] == "—" else row[field])
         self.place_editor(editor, item_id, field); self.amount_editor = editor
         editor.focus_set(); editor.selection_range(0, "end")
         editor.bind("<Return>", lambda _event: self.finish_name_edit(row, field, advance=True))
@@ -1915,8 +1924,8 @@ class SampleManager(tk.Tk):
         widget.bindtags(("CancelCellEdit", *widget.bindtags()))
         for child in widget.winfo_children():
             self.bind_outside_editor_clicks(child)
-    def cancel_edit_on_outside_click(self, _event):
-        if self.amount_editor:
+    def cancel_edit_on_outside_click(self, event):
+        if self.amount_editor and event.widget not in (self.vertical_scrollbar, self.horizontal_scrollbar):
             self.cancel_amount_edit()
     def cancel_amount_edit(self):
         if self.amount_editor:
@@ -1936,30 +1945,59 @@ class SampleManager(tk.Tk):
         value = tk.StringVar(master=editor, value=editor.get())
         editor.configure(font=self.sample_list_font, width=1, textvariable=value)
         resize = value.trace_add("write", lambda *_: self.reposition_active_editor(editor))
-        editor.bind("<Destroy>", lambda _event: value.trace_remove("write", resize))
+
+        def cleanup(_event):
+            value.trace_remove("write", resize)
+            self.size_editor_docks(0, 0)
+
+        editor.bind("<Destroy>", cleanup)
         self.editing_cell = (item_id, column)
         self.reposition_active_editor(editor)
         return value
+    def size_editor_docks(self, above, below):
+        frame = self.tree.master
+        for row, height in ((0, above), (3, below)):
+            if frame.rowconfigure(row, "minsize") != height:
+                frame.rowconfigure(row, minsize=height)
     def reposition_active_editor(self, editor=None):
         if not self.editing_cell: return
         editor = editor or self.amount_editor
         if not editor or not editor.winfo_exists(): return
         item_id, column = self.editing_cell
-        box = self.tree.bbox(item_id, column)
-        if not box:
+        tree = self.tree
+        if not tree.exists(item_id) or column not in tree["displaycolumns"]:
+            self.size_editor_docks(0, 0)
             editor.place_forget()
             return
-        x, y, width, height = box
-        viewport_width = self.tree.winfo_width()
-        if x + width <= 0 or x >= viewport_width:
-            editor.place_forget()
-            return
+        box = tree.bbox(item_id, column)
+        viewport_width = tree.winfo_width()
+        viewport_height = tree.winfo_height()
+        relative_y = 0
+        if box and box[1] < viewport_height:
+            x, y, width, height = box
+            height = min(height, viewport_height - y)
+            self.size_editor_docks(0, 0)
+            if x + width <= 0 or x >= viewport_width:
+                editor.place_forget()
+                return
+        else:
+            items = tree.get_children()
+            units_per_row = tree.row_pixels if tree.pixel_scrolling else 1
+            first_unit = round(tree.yview()[0] * len(items) * units_per_row)
+            first_index, offset = divmod(first_unit, units_per_row)
+            first_full_row = first_index + bool(offset)
+            above = tree.index(item_id) < first_full_row
+            reference = tree.bbox(items[min(first_full_row, len(items) - 1)], column)
+            x, width = (reference[0], reference[2]) if reference else (0, tree.column(column, "width"))
+            height = editor.winfo_reqheight()
+            self.size_editor_docks(height if above else 0, 0 if above else height)
+            relative_y, y = (0, -height) if above else (1, self.horizontal_scrollbar.winfo_height())
         # The one-character requested width includes the theme's padding and
         # the location dropdown arrow, and leaves room for the insertion cursor.
         text_width = self.sample_list_font.measure(editor.get()) + editor.winfo_reqwidth()
         width = min(viewport_width, max(width, text_width))
         x = max(0, min(x, viewport_width - width))
-        editor.place(x=x, y=y, width=width, height=height)
+        editor.place(in_=tree, x=x, y=y, rely=relative_y, width=width, height=height)
         editor.lift()
     def selected_edit_rows(self, fallback):
         selected_ids = self.selected_row_ids or set(self.tree.selection())
