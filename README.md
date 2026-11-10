@@ -8,6 +8,16 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 
 *App interface with molecule structures and selected columns. Identifying text has been anonymized.*
 
+## Contents
+- [Features](#features)
+- [Supported environments](#supported-environments)
+- [Setup](#setup)
+- [Use](#use)
+- [Customization](#customization)
+- [Data handling](#data-handling)
+- [Project structure](#project-structure)
+- [License](#license)
+
 ## Features
 - Browse samples from multiple collections in a customizable table with molecule structures and sample details.
 - Sort by column and filter by location or regular expression.
@@ -88,20 +98,21 @@ Server and display preferences are saved separately in the current user's profil
 
 Customizable launcher logs are in `~/Library/Logs/Chemotion Sample Manager/launcher.log` on macOS or `%LOCALAPPDATA%\Chemotion Sample Manager\Logs\launcher.log` on Windows.
 
-## Source files
-Files in `src/chemotion_sample_manager/`:
-
-| Source file | Purpose |
-| --- | --- |
-| `__init__.py` | Package identity and application name. |
-| `__main__.py` | Module and installed-command entry point; starts the GUI. |
-| `gui.py` | Window, table, dialogs, cell editing, and structure thumbnails. |
-| `client.py` | Chemotion sign-in, sample retrieval, sample updates, and collection export. |
-| `samples.py` | Sample rows, column definitions, amount and date formatting, sorting, and location filtering. |
-| `settings.py` | Saved preferences, column and print settings, and secure credential storage. |
-| `printing.py` | PDF checklist layout and generation. |
-| `bootstrap.py` | Customizable launcher environment and dependency setup. |
-| `standalone.py` | Standalone app entry point and dependency checks. |
+## Project structure
+- `src/chemotion_sample_manager/` — Python application code.
+  - `__init__.py` — Package identity and application name.
+  - `__main__.py` — Entry point for the module and installed command.
+  - `gui.py` — Window, inventory table, dialogs, cell editing, and structure thumbnails.
+  - `client.py` — Chemotion sign-in, sample retrieval and updates, and collection export.
+  - `samples.py` — Sample rows, columns, formatting, sorting, and filtering.
+  - `settings.py` — Preferences, print settings, and credential storage.
+  - `printing.py` — PDF checklist generation.
+  - `bootstrap.py` — Python environment and dependency setup for the customizable launchers.
+  - `standalone.py` — Standalone app entry point and dependency checks.
+- `Chemotion Sample Manager.app` and `Chemotion Sample Manager.cmd` — Customizable launchers for macOS and Windows.
+- `scripts/` — Standalone build and macOS icon scripts.
+- `tests/` — Automated tests.
+- `pyproject.toml` — Package configuration and dependencies.
 
 ## License
 This project is licensed under the [MIT License](LICENSE).
