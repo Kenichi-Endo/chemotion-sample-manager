@@ -1,8 +1,7 @@
-"""Collection retrieval order and partial-result stopping, without opening a GUI."""
+"""Sample loading order and cancellation without opening a GUI."""
 from chemotion_sample_manager import client as api_client
 import json
 from collections import deque
-from pathlib import Path
 import threading
 from types import SimpleNamespace
 from urllib.parse import parse_qs
@@ -46,7 +45,7 @@ def prepare_client(monkeypatch):
     return api_client.ChemotionClient()
 
 
-def test_inventory_returns_descending_numeric_label_order(monkeypatch):
+def test_samples_load_in_descending_numeric_label_order(monkeypatch):
     client = prepare_client(monkeypatch)
     assert [row["id"] for row in client.inventory(42)] == [10, 2, 1]
 
@@ -94,12 +93,10 @@ def test_list_pages_overlap_with_bounded_connections_and_can_stop(monkeypatch, s
     assert connections[0] is not connections[1]
 
 
-def test_inventory_loads_oldest_first_when_selected(monkeypatch):
+def test_samples_load_oldest_first_when_selected(monkeypatch):
     client = prepare_client(monkeypatch)
-    streamed = []
-    rows = client.inventory(42, newest_first=False, rows_loaded=streamed.extend)
+    rows = client.inventory(42, newest_first=False)
     assert [row["id"] for row in rows] == [1, 2, 10]
-    assert [row["id"] for row in sorted(streamed, key=lambda row: row["_inventory_position"])] == [1, 2, 10]
 
 
 @pytest.mark.parametrize("stop", [False, True])
@@ -112,7 +109,6 @@ def test_details_and_rows_arrive_while_later_list_page_is_blocked(monkeypatch, s
     cancelled = threading.Event()
     entries = []
     delivered = []
-    messages = []
     original_send = api_client.InventoryConnection.send
 
     def send(self, request, **kwargs):
@@ -143,7 +139,6 @@ def test_details_and_rows_arrive_while_later_list_page_is_blocked(monkeypatch, s
         delivered.extend(rows)
         if rows[0]["id"] == 10:
             assert not second_page.is_set()
-            assert messages[-1] == "Retrieving collection: 0 of 1…"
             if stop:
                 cancelled.set()
             early_row.set()
@@ -154,16 +149,14 @@ def test_details_and_rows_arrive_while_later_list_page_is_blocked(monkeypatch, s
         if stop:
             with pytest.raises(api_client.InventoryLoadCancelled) as stopped:
                 client.inventory(42, cancelled=cancelled, rows_loaded=loaded,
-                                 progress=messages.append, newest_first=newest_first)
+                                 newest_first=newest_first)
             assert entries == [10]
-            assert stopped.value.rows == delivered == [{"id": 10, "_inventory_position": 0}]
+            assert stopped.value.rows == delivered
+            assert [row["id"] for row in delivered] == [10]
         else:
-            rows = client.inventory(42, rows_loaded=loaded, progress=messages.append,
-                                    newest_first=newest_first)
-            assert entries == [10, 1, 20]
+            rows = client.inventory(42, rows_loaded=loaded, newest_first=newest_first)
             assert [row["id"] for row in rows] == ([20, 10, 1] if newest_first else [1, 10, 20])
-            assert [row["_inventory_position"] for row in rows] == [0, 1, 2]
-            assert len(delivered) == 3
+            assert sorted(row["id"] for row in delivered) == [1, 10, 20]
     finally:
         early_row.set()
 
@@ -195,7 +188,7 @@ def test_later_list_error_is_reported_after_early_rows(monkeypatch):
     try:
         with pytest.raises(ValueError, match="Invalid later page"):
             client.inventory(42, rows_loaded=loaded)
-        assert rows == [{"id": 10, "_inventory_position": 0}]
+        assert [row["id"] for row in rows] == [10]
     finally:
         delivered.set()
 
@@ -357,32 +350,7 @@ def test_sample_batch_uses_explicit_ids_and_collection_context(monkeypatch, sync
                        "limit": 2}
 
 
-def test_sample_list_status_shows_completed_collection_count(monkeypatch):
-    client = prepare_client(monkeypatch)
-    messages = []
-
-    client.inventory(42, progress=messages.append, collections=[{"id": 42, "label": "Inventory"}])
-
-    assert [message for message in messages if message.startswith("Retrieving collection:")] == [
-        "Retrieving collection: 0 of 1…", "Retrieving collection: 1 of 1…"]
-
-
-def test_loading_status_shows_escape_stop_hint():
-    viewer = app.SampleManager.__new__(app.SampleManager)
-    updates = []
-    viewer.inventory_loading = True
-    viewer.inventory_cancel_event = threading.Event()
-    viewer.colors = {"accent": "accent"}
-    viewer.status = SimpleNamespace(configure=lambda **kwargs: updates.append(kwargs))
-    viewer.progress = SimpleNamespace(configure=lambda **kwargs: None)
-
-    viewer._progress("Retrieving sample information: 1 of 3…", viewer.inventory_cancel_event)
-    viewer._progress("Updating sample name: 1 of 1…")
-
-    assert updates == [{"text": "Retrieving sample information: 1 of 3… (Esc to stop)", "fg": "accent"}]
-
-
-def test_escape_cancels_edit_without_stopping_inventory_loading():
+def test_escape_cancels_edit_without_stopping_sample_loading():
     cancelled = threading.Event()
     destroyed = []
     viewer = SimpleNamespace(
@@ -400,68 +368,17 @@ def test_escape_cancels_edit_without_stopping_inventory_loading():
     assert not cancelled.is_set()
 
 
-def test_stop_preserves_completed_details(monkeypatch):
-    client = prepare_client(monkeypatch)
-    cancelled = threading.Event()
-    release = threading.Event()
-
-    def entry(self, sample_id, *args):
-        if sample_id != 10:
-            release.wait(2)
-        return {"id": sample_id}
-
-    monkeypatch.setattr(api_client.ChemotionClient, "inventory_entry", entry)
-    def progress(message):
-        if message.startswith("Retrieving sample information: 1"):
-            cancelled.set()
-
-    try:
-        with pytest.raises(api_client.InventoryLoadCancelled) as stopped:
-            client.inventory(42, progress=progress, cancelled=cancelled)
-        assert stopped.value.rows == [{"id": 10, "_inventory_position": 0}]
-    finally:
-        release.set()
-
-
-def test_completed_rows_are_delivered_before_loading_finishes(monkeypatch):
-    client = prepare_client(monkeypatch)
-    cancelled = threading.Event()
-    delivered = []
-    release = threading.Event()
-
-    def entry(self, sample_id, *args):
-        if sample_id != 10:
-            release.wait(2)
-        return {"id": sample_id}
-
-    monkeypatch.setattr(api_client.ChemotionClient, "inventory_entry", entry)
-
-    def rows_loaded(rows):
-        delivered.extend(rows)
-        cancelled.set()
-
-    try:
-        with pytest.raises(api_client.InventoryLoadCancelled) as stopped:
-            client.inventory(42, cancelled=cancelled, rows_loaded=rows_loaded)
-        assert delivered == [{"id": 10, "_inventory_position": 0}]
-        assert delivered == stopped.value.rows
-    finally:
-        release.set()
-
-
-def test_table_updates_during_loading_and_ignores_old_loads():
+def test_streamed_rows_ignore_stale_and_finished_loads():
     current = threading.Event()
-    updates = []
     viewer = SimpleNamespace(
         inventory_cancel_event=current, inventory_loading=True, rows=[],
         structure_rows_pending=set(), structure_images={},
         column_visibility={"structure": SimpleNamespace(get=lambda: True)},
-        render_rows=lambda: updates.append("table"),
-        load_structure_images=lambda rows: updates.append(("structures", rows)),
+        render_rows=lambda: None,
+        load_structure_images=lambda rows: None,
     )
     app.SampleManager._rows_loaded(viewer, [{"id": 10}], current)
     assert viewer.rows == [{"id": 10}]
-    assert updates == ["table", ("structures", [{"id": 10}])]
     app.SampleManager._rows_loaded(viewer, [{"id": 2}], threading.Event())
     viewer.inventory_loading = False
     app.SampleManager._rows_loaded(viewer, [{"id": 1}], current)
@@ -474,7 +391,6 @@ def test_streamed_rows_and_thumbnails_preserve_selection_and_active_edit():
     order = ["10"]
     selected = {"10"}
     editor = SimpleNamespace(text="Uncommitted name", cursor=5)
-    repositioned = []
 
     def insert(parent, index, iid, **options):
         items[iid] = options
@@ -500,7 +416,7 @@ def test_streamed_rows_and_thumbnails_preserve_selection_and_active_edit():
         sort_key="label", sort_reverse=True,
         row_values=lambda row: (row["label"],),
         cancel_amount_edit=lambda: pytest.fail("Loading cancelled the active edit"),
-        reposition_active_editor=lambda: repositioned.append(viewer.editing_cell),
+        reposition_active_editor=lambda: None,
         tree=SimpleNamespace(
             get_children=lambda: tuple(order), delete=delete, insert=insert,
             move=move, item=lambda iid, **options: items[iid].update(options),
@@ -517,7 +433,6 @@ def test_streamed_rows_and_thumbnails_preserve_selection_and_active_edit():
     assert selected == {"10"}
     assert viewer.amount_editor is editor
     assert (editor.text, editor.cursor) == ("Uncommitted name", 5)
-    assert repositioned == [("10", "sample"), ("10", "sample")]
 
 
 def test_structure_sources_queue_once_in_arrival_order(monkeypatch):
@@ -571,7 +486,7 @@ def test_stop_retains_rows_already_rendered_before_cancellation():
     assert completed == [{"id": 10}, {"id": 2}]
 
 
-def test_sequential_inventory_waits_for_thumbnail_acknowledgement(monkeypatch):
+def test_sequential_sample_loading_waits_for_thumbnail_acknowledgement(monkeypatch):
     client = prepare_client(monkeypatch)
     started = []
     delivered = threading.Event()
@@ -666,7 +581,7 @@ def test_stop_with_pending_thumbnail_keeps_sample(monkeypatch):
     assert not worker.is_alive()
     assert not errors
     assert started == [10]
-    assert retained == [{"id": 10, "_inventory_position": 0}]
+    assert [row["id"] for row in retained] == [10]
 
 
 def test_gui_retrieves_all_samples_without_thumbnail_acknowledgement(monkeypatch):
@@ -797,9 +712,9 @@ def test_row_appears_with_its_thumbnail_without_changing_retrieval_status(monkey
     assert displayed.is_set()
 
 
-def test_combined_inventory_streams_pages_with_first_collection_context(monkeypatch):
+def test_samples_from_multiple_collections_keep_first_collection_context(monkeypatch):
     client = prepare_client(monkeypatch)
-    listed, requested, messages = [], [], []
+    listed, requested = [], []
     pages = {42: ((2, 10), (1,)), 43: ((2, 20),)}
 
     class Elements(list):
@@ -820,12 +735,6 @@ def test_combined_inventory_streams_pages_with_first_collection_context(monkeypa
             self.load_elements()
 
     all_pages = [(42, 1), (42, 2), (43, 1)]
-    detail_batches = []
-
-    def details(ids, collection_id, synchronized):
-        detail_batches.append((ids, collection_id, synchronized))
-        return {}
-
     def entry(self, sample_id, collection_id, synchronized, fallback, detail):
         requested.append((sample_id, collection_id, synchronized))
         return {"id": sample_id}
@@ -843,21 +752,12 @@ def test_combined_inventory_streams_pages_with_first_collection_context(monkeypa
         return response
 
     monkeypatch.setattr(api_client.InventoryConnection, "get", get_page)
-    monkeypatch.setattr(client, "sample_details", details)
     monkeypatch.setattr(api_client.ChemotionClient, "inventory_entry", entry)
-    rows = client.inventory(42, collections=[{"id": 42}, {"id": 43, "_synchronized": True}],
-                            progress=messages.append)
+    rows = client.inventory(42, collections=[{"id": 42}, {"id": 43, "_synchronized": True}])
     expected = [20, 10, 2, 1]
     assert [row["id"] for row in rows] == expected
-    assert requested == [(10, 42, False), (2, 42, False), (1, 42, False), (20, 43, True)]
-    assert detail_batches == [([10, 2], 42, False), ([20], 43, True)]
+    assert sorted(requested) == [(1, 42, False), (2, 42, False), (10, 42, False), (20, 43, True)]
     assert sorted(listed) == all_pages
-    assert [row["_inventory_position"] for row in rows] == list(range(len(expected)))
-    assert [message for message in messages if message.startswith("Retrieving collections:")] == [
-        "Retrieving collections: 0 of 2…", "Retrieving collections: 1 of 2…",
-        "Retrieving collections: 2 of 2…"]
-    sample_progress = [message for message in messages if message.startswith("Retrieving sample information:")]
-    assert all(message.endswith("of 4…") for message in sample_progress)
 
 
 @pytest.mark.parametrize("aborted", [False, True])

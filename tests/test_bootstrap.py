@@ -118,7 +118,10 @@ def test_launcher_runs_package_module(tmp_path, monkeypatch, platform_name, wind
 
 @pytest.mark.skipif(bootstrap.sys.platform == "win32", reason="Requires a POSIX shell")
 def test_macos_wrapper_accepts_current_source_layout():
-    launcher = SOURCE.parents[2] / "Chemotion Sample Manager.app" / "Contents" / "MacOS" / "Chemotion Sample Manager"
+    launcher = (
+        SOURCE.parents[2] / "launchers" / "macos" / "Chemotion Sample Manager.app"
+        / "Contents" / "MacOS" / "Chemotion Sample Manager"
+    )
     # Run the wrapper's source checks, stopping before environment setup or GUI launch.
     preflight = launcher.read_text().split("\nexport ", 1)[0]
     result = subprocess.run(["/bin/sh", "-c", preflight, str(launcher)],
