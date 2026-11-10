@@ -33,14 +33,20 @@ def test_mixture_names_use_components():
     assert inventory.inventory_row({"sample_type": "Mixture"})["molecule"] == "(Mixture) —"
 
 
-@pytest.mark.parametrize("state, expected_ids", [(0, [1, 3]), (1, [1, 2, 3])])
-def test_selection_extended_during_edit_updates_commit_targets(state, expected_ids):
+@pytest.mark.parametrize("state, initial_ids, expected_ids", [
+    (0, {"1"}, [1, 3]),
+    (0, {"1", "2", "3"}, [1, 2]),
+    (0, {"3"}, []),
+    (1, {"1", "3"}, [1, 2, 3]),
+])
+def test_modifier_click_during_edit_updates_commit_targets(state, initial_ids, expected_ids):
     rows = [{"id": number} for number in (1, 2, 3)]
-    selection = {"1"}
+    selection = set(initial_ids)
     saved = []
     viewer = SimpleNamespace(
-        editing_cell=("1", "vendor"), editing_rows=rows[:1],
-        selected_row_ids={"1"}, filtered_rows=lambda: rows,
+        editing_cell=("3", "vendor"),
+        editing_rows=[row for row in rows if str(row["id"]) in initial_ids],
+        selected_row_ids=set(initial_ids), filtered_rows=lambda: rows,
         amount_editor=SimpleNamespace(get=lambda: "New vendor"),
         tree=SimpleNamespace(
             identify_row=lambda y: "3", selection=lambda: tuple(selection),
@@ -48,15 +54,53 @@ def test_selection_extended_during_edit_updates_commit_targets(state, expected_i
             get_children=lambda: ("1", "2", "3"),
             focus=lambda *args: "1",
         ),
-        cancel_amount_edit=lambda: None,
         _save_vendor=lambda targets, value: saved.append((targets, value)),
     )
+    viewer.amount_editor.destroy = lambda: None
+    viewer.cancel_amount_edit = lambda: app.SampleManager.cancel_amount_edit(viewer)
     viewer.remember_selection = lambda: app.SampleManager.remember_selection(viewer)
 
     app.SampleManager.extend_edit_selection(viewer, SimpleNamespace(y=10, state=state))
-    app.SampleManager.finish_vendor_edit(viewer, rows[0], advance=True)
+    app.SampleManager.finish_vendor_edit(viewer, rows[2], advance=False)
 
-    assert saved == [([rows[number - 1] for number in expected_ids], "New vendor")]
+    assert viewer.selected_row_ids == {str(number) for number in expected_ids}
+    expected_rows = [rows[number - 1] for number in expected_ids]
+    assert saved == ([(expected_rows, "New vendor")] if expected_rows else [])
+
+
+def test_shift_click_replaces_range_from_last_plain_or_toggle_click():
+    items = tuple("12345678")
+    selection = {"1", "3", "5"}
+    viewer = SimpleNamespace(
+        editing_cell=None,
+        tree=SimpleNamespace(
+            identify_row=lambda y: str(y),
+            selection=lambda: tuple(selection),
+            selection_set=lambda ids: (selection.clear(), selection.update(ids)),
+            get_children=lambda: items,
+            focus=lambda *args: "1",
+        ),
+    )
+    viewer.remember_selection = lambda: app.SampleManager.remember_selection(viewer)
+
+    def modifier_click(row, state):
+        app.SampleManager.extend_edit_selection(viewer, SimpleNamespace(y=row, state=state))
+        assert viewer.selected_row_ids == selection
+
+    app.SampleManager.anchor_row_selection(viewer, SimpleNamespace(y=3))
+    modifier_click(7, state=1)
+    assert selection == set("134567")
+    modifier_click(4, state=1)
+    assert selection == set("1345")
+    modifier_click(2, state=1)
+    assert selection == set("1235")
+
+    modifier_click(5, state=0)
+    assert selection == set("123")
+    modifier_click(8, state=1)
+    assert selection == set("1235678")
+    modifier_click(6, state=1)
+    assert selection == set("12356")
 
 
 def test_mixture_molecule_cell_does_not_create_editor():

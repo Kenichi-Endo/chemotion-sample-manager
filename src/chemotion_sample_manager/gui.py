@@ -693,13 +693,18 @@ class SampleManager(tk.Tk):
         self.tree.bind("<Command-a>", self.select_all_visible)
         self.tree.bind("<Escape>", self.deselect_all_rows)
         self.tree.bind("<Delete>", self.delete_selected_row)
-        self.tree.bind(f"<{multi_selection_modifier(self.tk.call('tk', 'windowingsystem'))}-Button-1>", self.extend_edit_selection)
+        selection_modifier = multi_selection_modifier(self.tk.call("tk", "windowingsystem"))
+        self.tree.bind(f"<{selection_modifier}-Button-1>", self.extend_edit_selection)
+        self.tree.bind(f"<{selection_modifier}-Double-Button-1>", self.extend_edit_selection)
         self.tree.bind("<Shift-Button-1>", self.extend_edit_selection)
+        self.tree.bind("<Shift-Double-Button-1>", self.extend_edit_selection)
         self.tree.bind("<ButtonPress-1>", self.begin_column_drag)
+        self.tree.bind("<Button-1>", self.anchor_row_selection, add="+")
         self.tree.bind("<B1-Motion>", self.move_column_drag)
         self.tree.bind("<ButtonRelease-1>", self.finish_column_drag)
         self.tree.bind("<Button-1>", self.edit_amount, add="+")
-        self.tree.bind("<Double-1>", self.open_sample)
+        self.tree.bind("<Double-1>", self.anchor_row_selection)
+        self.tree.bind("<Double-1>", self.open_sample, add="+")
         self.tree.bind("<Double-1>", self.auto_size_column, add="+")
         # Header clicks are handled by finish_column_drag so the same gesture
         # can distinguish sorting from column reordering. Registering a
@@ -1563,10 +1568,13 @@ class SampleManager(tk.Tk):
             self.editing_rows = [row for row in self.filtered_rows()
                                  if str(row["id"]) in self.selected_row_ids]
     def select_all_visible(self, _event=None):
+        self.shift_selection = None
         self.tree.selection_set(self.tree.get_children())
         self.selected_row_ids = set(self.tree.selection())
         return "break"
     def deselect_all_rows(self, _event=None):
+        self.selection_anchor = None
+        self.shift_selection = None
         self.tree.selection_remove(self.tree.selection())
         self.selected_row_ids.clear()
         self.focus_set()
@@ -1635,23 +1643,39 @@ class SampleManager(tk.Tk):
         self.print_button.configure(state="normal" if self.rows else "disabled")
         self.status.configure(text="The sample could not be removed from all loaded collections.", fg=self.colors["error"])
         messagebox.showerror(APP_NAME, error)
+    def anchor_row_selection(self, event):
+        item_id = self.tree.identify_row(event.y)
+        if item_id:
+            self.selection_anchor = item_id
+            self.shift_selection = None
     def extend_edit_selection(self, event):
-        """Extend row selection without opening an editor on a modifier-click."""
+        """Toggle a row or extend the range without opening an editor."""
         item_id = self.tree.identify_row(event.y)
         if not item_id: return "break"
         selected_ids = set(self.tree.selection())
-        if event.state & 0x0001:  # Shift: add the visible range from the focus row.
+        if event.state & 0x0001:  # Shift
             items = self.tree.get_children()
-            anchor = self.tree.focus()
-            if anchor in items:
-                start, end = sorted((items.index(anchor), items.index(item_id)))
-                selected_ids.update(items[start:end + 1])
-            else:
-                selected_ids.add(item_id)
-        else:  # Command: add this row while preserving the existing selection.
-            selected_ids.add(item_id)
+            anchor = getattr(self, "selection_anchor", None)
+            if anchor not in items:
+                focus = self.tree.focus()
+                anchor = focus if focus in items else item_id
+                self.selection_anchor = anchor
+            previous = getattr(self, "shift_selection", None)
+            if previous is not None and selected_ids == previous[0]:
+                # Only remove rows added by the previous Shift-click.
+                selected_ids.difference_update(previous[1])
+            start, end = sorted((items.index(anchor), items.index(item_id)))
+            added_ids = set(items[start:end + 1]) - selected_ids
+            selected_ids.update(added_ids)
+            self.shift_selection = (selected_ids, added_ids)
+        else:
+            self.selection_anchor = item_id
+            self.shift_selection = None
+            selected_ids.symmetric_difference_update((item_id,))
         self.tree.selection_set(tuple(selected_ids)); self.tree.focus(item_id)
         self.remember_selection()
+        if not selected_ids and self.editing_cell:
+            self.cancel_amount_edit()
         return "break"
     def edit_amount(self, event):
         """Edit the supported inventory fields directly in the table."""
