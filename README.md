@@ -16,7 +16,6 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 - [Customization](#customization)
 - [Data handling](#data-handling)
 - [Project structure](#project-structure)
-- [License](#license)
 
 ## Features
 - Browse samples from multiple collections in a customizable table with molecule structures and sample details.
@@ -113,6 +112,3 @@ Customizable launcher logs are in `~/Library/Logs/Chemotion Sample Manager/launc
 - `scripts/` — Standalone build and macOS icon scripts.
 - `tests/` — Automated tests.
 - `pyproject.toml` — Package configuration and dependencies.
-
-## License
-This project is licensed under the [MIT License](LICENSE).
