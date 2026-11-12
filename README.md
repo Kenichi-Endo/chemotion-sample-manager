@@ -37,32 +37,30 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 
 ### Standalone app
 1. Download the ZIP for your platform from [Releases](https://github.com/Kenichi-Endo/chemotion-sample-manager/releases): **macos-apple-silicon**, **macos-intel**, or **windows-x64**.
-2. Extract the ZIP and open the app.
-3. On macOS, dismiss the verification warning, then open **System Settings → Privacy & Security → Open Anyway** and confirm.
-4. On Windows, when **Windows protected your PC** appears, select **More info → Run anyway**.
+2. Extract the ZIP.
 
 ### Customizable launcher
 1. Install Python 3.14, if not installed: [Python for macOS](https://www.python.org/downloads/macos/) or [Python for Windows](https://www.python.org/downloads/windows/). On Windows, select **Add python.exe to PATH** and keep **tcl/tk and IDLE** selected during installation.
-2. Download **Source code (zip)** from [Releases](https://github.com/Kenichi-Endo/chemotion-sample-manager/releases) and extract it, or clone the repository. Keep the project folder intact when moving or sharing the app.
-3. Open `launchers/macos/Chemotion Sample Manager.app` on macOS or double-click `launchers\windows\Chemotion Sample Manager.cmd` on Windows. Keep an internet connection available during automatic dependency installation. The first launch may take a few minutes.
-
-If macOS says **The application “Chemotion Sample Manager.app” cannot be opened**:
-
-1. Open Terminal, type `cd ` (including the space), drag the extracted project folder into Terminal, and press Return.
-2. Run:
-
-   ```sh
-   chmod +x "launchers/macos/Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager"
-   ```
-
-3. Reopen the app.
+2. Download **Source code (zip)** from [Releases](https://github.com/Kenichi-Endo/chemotion-sample-manager/releases) and extract it, or clone the repository.
+3. Locate the launcher in `launchers/`. Do not change its location.
 
 ### Common setup
-1. Enter the Chemotion server root URL (for example, `https://eln.example.org`), your username, and password, then select **Sign in**.
-2. Select collections (use Cmd/Ctrl/Shift-click for multiple selection).
-3. Click **Go**.
-4. Use **Columns** to choose visible columns. Drag column headings to reorder them, or click a heading to sort.
-5. Adjust **Font size** and **Structure size**.
+1. Open the app.
+   - On macOS, if you see **Apple could not verify “Chemotion Sample Manager” is free of malware that may harm your Mac or compromise your privacy.**, dismiss the warning. Open **[System Settings → Privacy & Security](x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension)**, scroll down to the bottom, select **Open Anyway**, and confirm.
+     If macOS says **The application “Chemotion Sample Manager.app” cannot be opened** when you open the customizable launcher:
+     1. Open [Terminal](file:///System/Applications/Utilities/Terminal.app), type `cd ` (including the space), drag the extracted project folder into Terminal, and press Return.
+     2. Run:
+        ```sh
+        chmod +x "launchers/macos/Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager"
+        ```
+     3. Reopen the launcher.
+   - On Windows, if you see **Windows protected your PC**, select **More info → Run anyway**.
+2. Keep an internet connection available while the launcher installs dependencies on its first run. This may take a few minutes.
+3. Enter the Chemotion server root URL (for example, `https://eln.example.org`), your username, and password, then select **Sign in**.
+4. Select collections (use Cmd/Ctrl/Shift-click for multiple selection).
+5. Click **Go**.
+6. Use **Columns** to choose visible columns. Drag column headings to reorder them, or click a heading to sort.
+7. Adjust **Font size** and **Structure size**.
 
 ## Use
 - Launch the app.
@@ -112,3 +110,14 @@ Customizable launcher logs are in `~/Library/Logs/Chemotion Sample Manager/launc
 - `scripts/` — Standalone build and macOS icon scripts.
 - `tests/` — Automated tests.
 - `pyproject.toml` — Package configuration and dependencies.
+
+<style>
+li > :is(ul, ol) {
+    margin-top: 0;
+}
+li > p:has(+ :is(ul, ol)),
+li:has(+ li) > :is(ul, ol):last-child,
+li:has(+ li) > :is(ul, ol):last-child > li:last-child > p:last-child {
+    margin-bottom: 0;
+}
+</style>
