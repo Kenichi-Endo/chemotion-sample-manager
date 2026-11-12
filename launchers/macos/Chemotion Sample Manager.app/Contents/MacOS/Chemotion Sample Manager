@@ -8,6 +8,11 @@ bootstrap="$project_dir/src/chemotion_sample_manager/bootstrap.py"
 icon="$launcher_dir/../Resources/chemotion-sample-manager-icon.png"
 
 if [ ! -r "$source" ] || [ ! -r "$bootstrap" ]; then
+    case "$launcher_dir" in
+        */AppTranslocation/*/d/*)
+            /usr/bin/osascript -e 'display alert "Chemotion Sample Manager could not find its project folder" message "macOS opened the app from an isolated location. In Finder, move Chemotion Sample Manager.app to another folder, then move it back to launchers/macos inside the project folder and reopen it." as warning'
+            ;;
+    esac
     printf '%s\n' 'Chemotion Sample Manager source was not found. Keep the app inside the project folder.' >&2
     exit 1
 fi
