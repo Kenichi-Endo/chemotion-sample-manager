@@ -59,6 +59,8 @@ def test_login_and_inventory_requests_use_chemotionapi_token(client, monkeypatch
         response.request = request
         response.status_code = 201 if request.url.endswith("/token") else 200
         response._content = b'{"token":"test-token"}' if response.status_code == 201 else b'{}'
+        if request.url.endswith("/about"):
+            response._content = b"Version: 4.0.1"
         return response
 
     monkeypatch.setattr(client.connection, "send", send)
@@ -67,12 +69,12 @@ def test_login_and_inventory_requests_use_chemotionapi_token(client, monkeypatch
     client.request("/api/v1/samples/1", b'{"name":"updated"}',
                    {"Content-Type": "application/json"}, "PUT")
     client.request("https://eln.example.org/images/molecules/1.svg")
-    assert requests[0].url == "https://eln.example.org/api/v1/public/token"
-    assert parse_qs(requests[0].body) == {"username": ["example"], "password": ["test-password"]}
-    for request in requests[1:]:
+    assert requests[1].url == "https://eln.example.org/api/v1/public/token"
+    assert parse_qs(requests[1].body) == {"username": ["example"], "password": ["test-password"]}
+    for request in requests[2:]:
         assert request.headers["Authorization"] == "Bearer test-token"
-    assert json.loads(requests[2].body) == {"name": "updated"}
-    assert requests[3].url == "https://eln.example.org/images/molecules/1.svg"
+    assert json.loads(requests[3].body) == {"name": "updated"}
+    assert requests[4].url == "https://eln.example.org/images/molecules/1.svg"
 
 
 @pytest.mark.parametrize("url", ["https://other.example.org/image.svg", "//other.example.org/image.svg",
@@ -125,7 +127,7 @@ def sample_server(client, monkeypatch):
         response.request = request
         response.status_code = 200
         if path == "/about":
-            response._content = b"Version: 3.1.2"
+            response._content = b"Version: 4.0.1"
             return response
         if path == "/api/v1/generic_elements/klasses.json":
             payload = {"klass": [{"name": "sample", "is_generic": False}]}
@@ -163,12 +165,12 @@ def test_prefetched_details_skip_individual_sample_request(client, sample_server
 
 @pytest.mark.parametrize("method, args, expected", [
     ("set_location", ("New",), {"location": "New"}),
-    ("set_density", ("1.25",), {"density": "1.25"}),
+    ("set_density", ("1.25",), {"density": 1.25}),
     ("set_sample_name", ("Renamed",), {"name": "Renamed"}),
     ("set_sample_name", ("",), {"name": ""}),
     ("set_molecule_name", (12,), {"molecule_name_id": 12}),
-    ("set_amount", ("real_amount", "0", "g"), {"real_amount_value": "0", "real_amount_unit": "g"}),
-    ("set_amount", ("target_amount", "250", "mg"), {"target_amount_value": "250", "target_amount_unit": "mg"}),
+    ("set_amount", ("real_amount", "0", "g"), {"real_amount_value": 0.0, "real_amount_unit": "g"}),
+    ("set_amount", ("target_amount", "250", "mg"), {"target_amount_value": 250.0, "target_amount_unit": "mg"}),
 ])
 def test_library_save_preserves_current_sample_data(client, sample_server, method, args, expected):
     sample, calls = sample_server
@@ -187,7 +189,7 @@ def test_library_save_preserves_current_sample_data(client, sample_server, metho
     assert body["molfile"] == "sample molfile"
     for key in ("real_amount_value", "real_amount_unit", "target_amount_value", "target_amount_unit", "molecule_name_id"):
         if key not in expected:
-            assert body[key] == sample[key]
+            assert body[key] == (float(sample[key]) if key.endswith("_value") else sample[key])
 
 
 def test_library_save_updates_flags_together(client, sample_server):
@@ -196,6 +198,15 @@ def test_library_save_updates_flags_together(client, sample_server):
     body = json.loads([body for method, _, body in calls if method == "PUT"][0])
     assert body["decoupled"] is False
     assert body["inventory_sample"] is True
+    assert body["container"] == sample["container"]
+
+
+def test_library_save_preserves_an_empty_analysis_container(client, sample_server):
+    sample, calls = sample_server
+    sample["container"]["children"] = []
+    client.set_sample_name(7, "Renamed", None, False, False)
+    body = json.loads(next(body for method, _, body in calls if method == "PUT"))
+    assert body["name"] == "Renamed"
     assert body["container"] == sample["container"]
 
 
@@ -280,34 +291,34 @@ def test_vendor_write_checks_sample_permission_after_rejection(
 def test_collection_picker_uses_library_trees_and_retains_all(client, monkeypatch, shared):
     paths = []
     payloads = {
-        "/api/v1/collections/roots.json": {"collections": [
-            {"id": 2, "label": "Group", "children": [{"id": 3, "label": "Inventory"}]}]},
+        "/api/v1/collections/": {
+            "own": [{"id": 1, "label": "All", "is_locked": True},
+                    {"id": 2, "label": "Group", "ancestry": "/"},
+                    {"id": 3, "label": "Inventory", "ancestry": "/2/"}],
+            "shared_with_me": [
+                {"id": 4, "label": "Shared group", "ancestry": "/"},
+                {"id": 5, "label": "Shared inventory", "ancestry": "/4/",
+                 "owner_name": "Shared owner", "collection_share_id": 99},
+                {"id": 3, "label": "Shared copy", "ancestry": "/", "owner_name": "Shared owner"},
+            ] if shared else [],
+        },
         "/api/v1/collections/all": {"collection": {"id": 1, "label": "All", "is_locked": True}},
-        "/api/v1/syncCollections/sync_remote_roots": {"syncCollections": [
-            {"id": 4, "label": "Shared group", "children": [
-                {"id": 5, "label": "Shared inventory", "sharer": {"initials": "ABC"}}]}] if shared else []},
     }
 
     def send(request, **kwargs):
         path = urlsplit(request.url).path
         paths.append(path)
-        assert request.method == "GET"
         response = Response()
         response.status_code = 200
         response._content = json.dumps(payloads[path]).encode()
         return response
 
-    def custom_request(*args, **kwargs):
-        pytest.fail("Collection loading must use chemotionapi functions")
-
     monkeypatch.setattr(client.connection, "send", send)
-    monkeypatch.setattr(client, "request", custom_request)
     collections = client.collections()
     assert [(item["id"], item["_synchronized"]) for item in collections] == (
-        [(1, False), (3, False), (5, True)] if shared else [(1, False), (3, False)])
+        [(1, False), (3, False), (3, True), (5, True)] if shared else [(1, False), (3, False)])
     if shared:
-        assert collections[-1]["_source_collection_id"] == 4
-        assert collections[-1]["sharer"] == {"initials": "ABC"}
+        assert collections[-1]["owner_name"] == "Shared owner"
     assert paths == list(payloads)
 
 
@@ -322,8 +333,7 @@ def test_library_pagination_loads_every_page(client, sample_server, monkeypatch,
         if urlsplit(request.url).path != "/api/v1/samples.json":
             return original_send(request, **kwargs)
         query = parse_qs(request.body)
-        collection_key = "sync_collection_id" if synchronized else "collection_id"
-        assert query[collection_key] == ["42"]
+        assert query["collection_id"] == ["42"]
         page = int(query["page"][0])
         pages.append(page)
         numbers = range(1, 101) if page == 1 else (101,)
@@ -340,21 +350,27 @@ def test_library_pagination_loads_every_page(client, sample_server, monkeypatch,
     monkeypatch.setattr(api_client.InventoryConnection, "send", lambda self, request, **kwargs: send(request, **kwargs))
     monkeypatch.setattr(client.connection, "send", send)
     monkeypatch.setattr(client, "login", lambda: None)
-    monkeypatch.setattr(client, "sample_details", lambda *args: {})
+    detail_contexts = []
+    def sample_details(sample_ids, collection_id):
+        detail_contexts.append(collection_id)
+        return {}
+    monkeypatch.setattr(client, "sample_details", sample_details)
     monkeypatch.setattr(api_client.ChemotionClient, "inventory_entry", lambda self, sample_id, *args: {"id": sample_id})
     monkeypatch.setattr(api_client.ChemotionClient, "login", lambda self: None)
     progress = []
     rows = client.inventory(42, synchronized=synchronized, progress=progress.append)
     assert pages == [1, 2]
     assert [row["id"] for row in rows] == list(range(101, 0, -1))
+    assert detail_contexts == [42]
     assert "Retrieving collection: 1 of 1…" in progress
     assert "Retrieving sample information: 101 of 101…" in progress
 
 
+
 @pytest.mark.parametrize("synchronized", [False, True])
-@pytest.mark.parametrize("status", [204, 404, 405, 403, 500])
-def test_library_removal_never_falls_back_or_retries(client, sample_server, monkeypatch, synchronized, status):
-    sample, calls = sample_server
+@pytest.mark.parametrize("status, locked", [(204, []), (200, [7]), (404, None), (403, None), (500, None)])
+def test_library_removal_handles_locked_samples_and_never_retries(
+        client, sample_server, monkeypatch, synchronized, status, locked):
     original_send = client.connection.send
     deletes = []
 
@@ -363,30 +379,29 @@ def test_library_removal_never_falls_back_or_retries(client, sample_server, monk
         response = Response()
         response.request = request
         response.status_code = 200
-        if path == "/api/v1/collections/roots.json":
-            payload = {"collections": [{"id": 42, "label": "Inventory"}]}
+        if path == "/api/v1/collections/":
+            key = "shared_with_me" if synchronized else "own"
+            payload = {"own": [], "shared_with_me": []}
+            payload[key] = [{"id": 42, "label": "Inventory"}]
         elif path == "/api/v1/collections/all":
             payload = {"collection": {"id": 1}}
-        elif path == "/api/v1/syncCollections/sync_remote_roots":
-            payload = {"syncCollections": [{"id": 42, "label": "Shared inventory"}]}
         elif request.method == "DELETE":
             deletes.append((path, json.loads(request.body)))
             response.status_code = status if len(deletes) == 1 else 204
-            response._content = b"" if response.status_code == 204 else b'{"error":"test error"}'
-            return response
+            payload = {"locked_sample_ids": locked} if locked is not None else {"error": "Request rejected"}
         else:
             return original_send(request, **kwargs)
-        response._content = json.dumps(payload).encode()
+        response._content = b"" if response.status_code == 204 else json.dumps(payload).encode()
         return response
 
     monkeypatch.setattr(client.connection, "send", send)
-    if status != 204:
+    if locked is None:
         with pytest.raises(ConnectionError):
             client.remove_sample_from_collection(42, 7, synchronized=synchronized)
     else:
-        client.remove_sample_from_collection(42, 7, synchronized=synchronized)
-    assert deletes[0][0] == "/api/v1/collections/elements"
-    state = deletes[0][1]["ui_state"]
-    assert state["currentCollection"] == {"id": 42, "is_sync_to_me": synchronized}
-    assert state["sample"]["checkedIds"] == [7]
+        assert client.remove_sample_from_collection(42, 7, synchronized=synchronized) == {"locked_sample_ids": locked}
     assert len(deletes) == 1
+    path, payload = deletes[0]
+    assert path == "/api/v1/collection_elements/42"
+    assert payload["ui_state"]["currentCollection"] == {"id": 42}
+    assert payload["ui_state"]["sample"]["checkedIds"] == [7]

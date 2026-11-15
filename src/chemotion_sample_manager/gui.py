@@ -1615,8 +1615,7 @@ class SampleManager(tk.Tk):
             for collection in collections:
                 try:
                     result = client.remove_sample_from_collection(
-                        collection["id"], row["id"], bool(collection.get("_synchronized")),
-                        collection.get("_source_collection_id"))
+                        collection["id"], row["id"], bool(collection.get("_synchronized")))
                     locked_sample_ids.extend(result.get("locked_sample_ids") or [])
                 except Exception as error:
                     failures.append(f"{collection.get('label') or collection['id']}: {error}")
@@ -1939,8 +1938,7 @@ class SampleManager(tk.Tk):
         if not collection_id:
             self.status.configure(text="This sample has no Chemotion collection reference.", fg=self.colors["error"])
             return "break"
-        route = "scollection" if row.get("synchronized") else "collection"
-        webbrowser.open_new_tab(f"{client.CHEMOTION_URL}/mydb/{route}/{collection_id}/sample/{row['id']}")
+        webbrowser.open_new_tab(f"{client.CHEMOTION_URL}/mydb/collection/{collection_id}/sample/{row['id']}")
         return "break"
     def bind_outside_editor_clicks(self, widget):
         # Run before widget bindings can consume the click or open a new editor.

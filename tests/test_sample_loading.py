@@ -18,7 +18,7 @@ def mock_sample_list(monkeypatch, numbers):
         response = Response()
         response.status_code = 200
         if request.url.endswith("/about"):
-            response._content = b"Version: 3.1.2"
+            response._content = b"Version: 4.0.1"
             return response
         if request.url.endswith("/api/v1/segments/klasses.json"):
             response._content = b'{"klass": []}'
@@ -65,7 +65,7 @@ def test_list_pages_overlap_with_bounded_connections_and_can_stop(monkeypatch, s
         if not request.url.endswith("/api/v1/samples.json"):
             return original_send(self, request, **kwargs)
         payload = parse_qs(request.body)
-        assert payload["sync_collection_id" if synchronized else "collection_id"] == ["42"]
+        assert payload["collection_id"] == ["42"]
         page = int(payload["page"][0])
         requested.append(page)
         if page > 1:
@@ -206,11 +206,10 @@ def test_collections_overlap_and_preserve_first_selected_context(monkeypatch, st
     maximum = 0
 
     class Elements(list):
-        def __init__(self, connection, klass, collection_id, collection_is_sync):
+        def __init__(self, connection, klass, collection_id):
             self.connection = connection
             self.collection_id = collection_id
             self.max_page = 0 if collection_id == 44 else 1
-            assert collection_is_sync == (collection_id == 43)
 
         def load_elements(self, per_page):
             nonlocal active, maximum
@@ -264,9 +263,9 @@ def test_details_load_in_batches_of_100_and_stream_before_next_batch(monkeypatch
     batches = []
     delivered = []
 
-    def details(ids, collection_id, synchronized):
+    def details(ids, collection_id):
         assert len(delivered) == sum(len(batch) for batch in batches)
-        assert (collection_id, synchronized) == (42, False)
+        assert collection_id == 42
         batches.append(ids)
         return {number: {"id": number, "location": "Full detail"} for number in ids}
 
@@ -331,8 +330,7 @@ def test_empty_shared_batch_keeps_individual_reads_and_skips_later_batches(monke
     assert len(attempts) == 1
 
 
-@pytest.mark.parametrize("synchronized", [False, True])
-def test_sample_batch_uses_explicit_ids_and_collection_context(monkeypatch, synchronized):
+def test_sample_batch_uses_explicit_ids_and_collection_context(monkeypatch):
     client = api_client.ChemotionClient()
     calls = []
 
@@ -341,12 +339,12 @@ def test_sample_batch_uses_explicit_ids_and_collection_context(monkeypatch, sync
         return json.dumps({"samples": [{"id": 1}, {"id": 2}, {"id": 999}]}).encode()
 
     monkeypatch.setattr(client, "request", request)
-    assert client.sample_details([1, 2], 42, synchronized) == {1: {"id": 1}, 2: {"id": 2}}
+    assert client.sample_details([1, 2], 42) == {1: {"id": 1}, 2: {"id": 2}}
     path, payload, headers, method = calls[0]
     assert path == "/api/v1/samples/ui_state"
     assert method == "POST"
-    assert payload == {"ui_state": {"collection_id": 42, "is_sync_to_me": synchronized,
-                                    "all": False, "included_ids": [1, 2], "excluded_ids": []},
+    assert payload == {"ui_state": {"collection_id": 42, "all": False,
+                                    "included_ids": [1, 2], "excluded_ids": []},
                        "limit": 2}
 
 
@@ -718,11 +716,10 @@ def test_samples_from_multiple_collections_keep_first_collection_context(monkeyp
     pages = {42: ((2, 10), (1,)), 43: ((2, 20),)}
 
     class Elements(list):
-        def __init__(self, connection, klass, collection_id, collection_is_sync):
+        def __init__(self, connection, klass, collection_id):
             self.collection_id = collection_id
             self.page = 1
             self.max_page = len(pages[collection_id])
-            assert collection_is_sync == (collection_id == 43)
 
         def load_elements(self, per_page=100):
             self.clear()

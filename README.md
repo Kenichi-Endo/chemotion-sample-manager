@@ -2,8 +2,6 @@
 
 Chemotion Sample Manager is a desktop app based on [Chemotion API](https://github.com/Chemotion/chemotionapi) for viewing, bulk-editing, and printing [Chemotion ELN](https://chemotion.net/) sample information.
 
-> ⚠️ **Caution.** Chemotion ELN v4 has not yet been tested with Chemotion Sample Manager.
-
 ![Chemotion Sample Manager with anonymized locations and connection details](docs/images/inventory-anonymized.png)
 
 *App interface with molecule structures and selected columns. Identifying text has been anonymized.*
@@ -29,7 +27,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 ## Supported environments
 - macOS 11+ (Intel or Apple Silicon).
 - Windows 10+ (64-bit Intel/AMD).
-- Chemotion ELN v3.1.2. Other versions may work but have not been verified.
+- Chemotion ELN v4+ (tested with v4.0.1; use [app v0.3.4](https://github.com/Kenichi-Endo/chemotion-sample-manager/releases/tag/v0.3.4) for ELN v3).
 
 ## Setup
 - **Standalone app:** Ready to use without installing Python.
@@ -55,7 +53,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
         ```
      3. Reopen the launcher.
    - On Windows, if you see **Windows protected your PC**, select **More info → Run anyway**.
-2. Keep an internet connection available while the launcher installs dependencies on its first run. This may take a few minutes.
+2. Keep an internet connection with access to GitHub available while the launcher installs dependencies on its first run. This may take a few minutes.
 3. Enter the Chemotion server root URL (for example, `https://eln.example.org`), your username, and password, then select **Sign in**.
 4. Select collections (use Cmd/Ctrl/Shift-click for multiple selection).
 5. Click **Go**.
@@ -82,7 +80,10 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 Edit the Python files in `src/chemotion_sample_manager/` manually or with a coding agent, then restart the customizable launcher.
 
 ## Data handling
-Most communication with Chemotion uses the built-in functions of [chemotionapi](https://github.com/Chemotion/chemotionapi) version **312.0.2**: sign-in (`Instance.login()`), loading collections (`Instance.get_root_collection()`, which also calls `RootCollection.load_sync_collection()`), sample listing (`ElementSet.load_elements()` and `ElementSet.next_page()`), sample details (`Instance.get_sample()`), sample edits (`Sample.save()`), and removing samples from collections (`Collection.remove_elements()`). Vendor metadata, creating molecule names, structure images, and collection exports use custom requests through the same authenticated connection (`Connection.get()`, `Connection.post()`, and `Connection.put()`).
+The app uses [chemotionapi](https://github.com/Chemotion/chemotionapi/tree/v401.0.0) version **401.0.0** for its authenticated connection.
+
+- **Library methods** handle sign-in (`Instance.login()`), collection loading (`Instance.get_root_collection()`), the first page of a sample list (`ElementSet.load_elements()`), individual sample details (`Instance.get_sample()`), saving sample fields (`Sample.save()`), and sample removal (`Collection.remove_elements()`).
+- **Custom API requests** handle batch sample-list pages, batch sample details, vendor metadata, creating molecule names, structure images, and collection export.
 
 Sample information is retrieved over HTTPS and held in memory while the app is open.
 

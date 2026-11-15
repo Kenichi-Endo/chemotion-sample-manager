@@ -131,6 +131,13 @@ class InventorySample(Sample):
         # loads the linked reaction and can fail on unrelated custom fields.
         return self.properties.get("gas_type", GasType.OFF)
 
+    def _clean_analyses_data(self):
+        # The library expects a first analysis container even when the ELN
+        # returns an empty children array. Inventory edits leave it empty.
+        if as_dict(self.json_data.get("container")).get("children") == []:
+            return {}
+        return super()._clean_analyses_data()
+
 
 class ChemotionClient:
     """Inventory operations over a chemotionapi authenticated connection."""
@@ -222,29 +229,20 @@ class ChemotionClient:
         raise TimeoutError("The export is still pending. Check Chemotion notifications for its download link.")
 
     def collections(self):
-        """Return selectable records from chemotionapi's own and shared trees."""
+        """Return selectable owned and shared collections."""
         root = self.instance.get_root_collection()
         records = [(root.all, False)]
         records.extend((collection.to_json(), False) for collection in root.children)
         records.extend((collection.to_json(), True) for collection in root.sync_root.children)
         found = {}
-        def add(collection, synchronized=False, source_collection_id=None):
-            if not isinstance(collection, dict) or collection.get("id") is None: return
-            item = dict(collection); item["_synchronized"] = synchronized
-            if synchronized:
-                # Child entries use a sync-link ID, whereas Chemotion's
-                # collection-elements endpoint requires the originating root.
-                item["_source_collection_id"] = source_collection_id or item["id"]
-            found[(item["id"], synchronized)] = item
+        def add(collection, synchronized):
             for child in collection.get("children") or []:
-                add(child, synchronized, item.get("_source_collection_id"))
+                add(child, synchronized)
+            if collection.get("id") is not None and not collection.get("children"):
+                found[(collection["id"], synchronized)] = {**collection, "_synchronized": synchronized}
         for record, synchronized in records: add(record, synchronized)
-        # Collection trees include grouping containers as well as the actual
-        # collections.  A container has child collections but no inventory of
-        # its own, so showing it in the picker produces empty results.  Keep
-        # only leaves, while preserving every nested selectable collection.
-        leaves = (item for item in found.values() if not item.get("children"))
-        return sorted(leaves, key=lambda item: str(item.get("label") or "").casefold())
+        return sorted(found.values(), key=lambda item: str(item.get("label") or "").casefold())
+
     def inventory(self, collection_id, synchronized=False, progress=None, cancelled=None, rows_loaded=None, sequential=False, row_ready=None, collections=None, newest_first=True):
         """Retrieve the inventory, reporting progress through ``progress``."""
         stopped = threading.Event()
@@ -286,16 +284,15 @@ class ChemotionClient:
                 list_worker_state.client = client
             check_cancelled()
             context_id = collection["id"]
-            context_sync = bool(collection.get("_synchronized"))
             if page == 1:
                 # Use ElementSet to discover pagination without loading details.
                 elements = ElementSet(client.connection, {"name": "sample", "is_generic": False},
-                                      context_id, collection_is_sync=context_sync)
+                                      context_id)
                 elements.load_elements(per_page=100)
                 return [sample.json_data for sample in list.__iter__(elements)], max(1, elements.max_page)
             payload = {"page": page, "per_page": 100, "filter_created_at": False,
                        "product_only": False, "el_type": "sample",
-                       "sync_collection_id" if context_sync else "collection_id": context_id}
+                       "collection_id": context_id}
             with client.connection.get("/api/v1/samples.json", data=payload) as response:
                 return response.json().get("samples", []), None
 
@@ -346,7 +343,7 @@ class ChemotionClient:
                         for sample in page_samples.pop((next_collection, next_page)):
                             sample_id = sample["id"]
                             if sample_id not in sample_contexts:
-                                sample_contexts[sample_id] = (collection["id"], bool(collection.get("_synchronized")))
+                                sample_contexts[sample_id] = collection
                                 batch.append(sample)
                             if label:
                                 names = sample_collection_names.get(sample_id, ())
@@ -384,8 +381,8 @@ class ChemotionClient:
             if client is None:
                 client = ChemotionClient(); client.login(); worker_state.client = client
             check_cancelled()
-            sample_collection_id, sample_synchronized = sample_contexts[sample["id"]]
-            row = client.inventory_entry(sample["id"], sample_collection_id, sample_synchronized,
+            collection = sample_contexts[sample["id"]]
+            row = client.inventory_entry(sample["id"], collection["id"], bool(collection.get("_synchronized")),
                                          sample, sample_details.get(sample["id"]))
             set_collection_display(row)
             row["_inventory_position"] = positions[sample["id"]]
@@ -430,18 +427,19 @@ class ChemotionClient:
                     sample_details.clear()
                     groups = {}
                     for sample in samples[next_sample:batch_end]:
-                        groups.setdefault(sample_contexts[sample["id"]], []).append(sample["id"])
-                    for (context_id, context_sync), sample_ids in groups.items():
+                        collection = sample_contexts[sample["id"]]
+                        groups.setdefault(collection["id"], []).append(sample["id"])
+                    for context_id, sample_ids in groups.items():
                         if cancelled and cancelled.is_set():
                             raise InventoryLoadCancelled([row for row in rows if row is not None])
-                        if batch_supported and (context_id, context_sync) not in empty_batch_contexts:
+                        if batch_supported and context_id not in empty_batch_contexts:
                             try:
-                                details = self.sample_details(sample_ids, context_id, context_sync)
+                                details = self.sample_details(sample_ids, context_id)
                                 sample_details.update(details)
                                 # Some servers list shared samples but exclude
                                 # them from this route. Keep individual reads.
                                 if not details:
-                                    empty_batch_contexts.add((context_id, context_sync))
+                                    empty_batch_contexts.add(context_id)
                             except ConnectionError as error:
                                 if getattr(error.__cause__, "status_code", None) not in {404, 405}:
                                     raise
@@ -485,14 +483,14 @@ class ChemotionClient:
             set_collection_display(row)
             row["_inventory_position"] = position
         return ordered_rows
-    def sample_details(self, sample_ids, collection_id, synchronized=False):
+    def sample_details(self, sample_ids, collection_id):
         """Fetch up to 100 full sample records through the read-only batch route."""
         if not sample_ids:
             return {}
         if len(sample_ids) > SAMPLE_DETAIL_BATCH_SIZE:
             raise ValueError("Request at most 100 sample details per batch.")
         payload = {"ui_state": {"collection_id": collection_id,
-                                "is_sync_to_me": synchronized, "all": False,
+                                "all": False,
                                 "included_ids": sample_ids, "excluded_ids": []},
                    "limit": len(sample_ids)}
         response = json.loads(self.request(
@@ -568,7 +566,7 @@ class ChemotionClient:
             sample.molecule["molfile"] = sample.json_data["molfile"]
         with self._sample_write(sample_id):
             sample.save()
-    def remove_sample_from_collection(self, collection_id, sample_id, synchronized=False, source_collection_id=None):
+    def remove_sample_from_collection(self, collection_id, sample_id, synchronized=False):
         """Remove one sample's membership in a collection without deleting it."""
         root = self.instance.get_root_collection(reload=False)
         tree = root.sync_root if synchronized else root
@@ -578,8 +576,7 @@ class ChemotionClient:
         # A listing record identifies an existing sample without fetching it.
         elements = ElementSet(self.connection, {"name": "sample", "is_generic": False})
         sample = elements.new_element({"id": sample_id, "type": "sample", "molecule": {}})
-        matches[0].remove_elements(sample)
-        return {}
+        return {"locked_sample_ids": matches[0].remove_elements(sample)}
     def set_sample_name(self, sample_id, name, container, decoupled, inventory_sample):
         """Update a sample name without letting API defaults reset its flags."""
         self._save_sample(sample_id, {"name": name})

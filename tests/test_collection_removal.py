@@ -11,8 +11,8 @@ def test_removal_attempts_every_loaded_collection(monkeypatch, failure, locked):
     calls, completed, errors = [], [], []
     row = {"id": 7, "label": "S7"}
 
-    def remove(collection_id, sample_id, synchronized, source_id):
-        calls.append((collection_id, sample_id, synchronized, source_id))
+    def remove(collection_id, sample_id, synchronized):
+        calls.append((collection_id, sample_id, synchronized))
         if failure and collection_id == 1:
             raise ConnectionError("Unavailable")
         return {"locked_sample_ids": ["7"] if locked and collection_id == 1 else []}
@@ -24,8 +24,8 @@ def test_removal_attempts_every_loaded_collection(monkeypatch, failure, locked):
         _sample_removed_from_collection=lambda *args: completed.append(args),
         _sample_removal_failed=errors.append)
     app.SampleManager._remove_sample_from_collection(viewer, row, [
-        {"id": 1, "label": "First"}, {"id": 2, "_synchronized": True, "_source_collection_id": 3}])
-    assert calls == [(1, 7, False, None), (2, 7, True, 3)]
+        {"id": 1, "label": "First"}, {"id": 2, "_synchronized": True}])
+    assert calls == [(1, 7, False), (2, 7, True)]
     if failure:
         assert not completed
         assert "First: Unavailable" in errors[0]

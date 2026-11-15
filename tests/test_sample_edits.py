@@ -11,6 +11,7 @@ from test_amount_display import app
 @pytest.mark.parametrize("gas_type", list(api_client.GasType))
 def test_inventory_serialization_does_not_load_linked_reaction(monkeypatch, gas_type):
     sample = api_client.InventorySample.__new__(api_client.InventorySample)
+    sample._data_loaded = True
     sample._is_partial = False
     sample._properties = {"gas_type": gas_type}
 
@@ -157,8 +158,8 @@ def test_location_filter_deselects_hidden_samples_without_restoring_them():
     assert selection == viewer.selected_row_ids == {"1"}
 
 
-@pytest.mark.parametrize("synchronized, route", [(False, "collection"), (True, "scollection")])
-def test_double_click_opens_sample_without_refresh(monkeypatch, synchronized, route):
+@pytest.mark.parametrize("synchronized", [False, True])
+def test_double_click_opens_sample_without_refresh(monkeypatch, synchronized):
     opened_urls = []
     monkeypatch.setattr(app.client, "CHEMOTION_URL", "https://eln.example.org")
     monkeypatch.setattr(app.webbrowser, "open_new_tab", opened_urls.append)
@@ -169,7 +170,7 @@ def test_double_click_opens_sample_without_refresh(monkeypatch, synchronized, ro
     )
 
     assert app.SampleManager.open_sample(viewer, SimpleNamespace(y=10)) == "break"
-    assert opened_urls == [f"https://eln.example.org/mydb/{route}/7/sample/2"]
+    assert opened_urls == ["https://eln.example.org/mydb/collection/7/sample/2"]
 
 
 @pytest.mark.parametrize("item_id, field, direction, expected", [
