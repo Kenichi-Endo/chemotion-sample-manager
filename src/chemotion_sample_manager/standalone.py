@@ -30,6 +30,19 @@ def embedded_tk_library(bundle):
 
 
 def self_test(report_path):
+    from chemotion_sample_manager import settings
+    report_path = Path(report_path)
+    profile, legacy_profile = settings.PROFILE_SETTINGS_PATH, settings.LEGACY_PROFILE_SETTINGS_PATH
+    settings.PROFILE_SETTINGS_PATH = report_path.parent / "profile" / "settings.json"
+    settings.LEGACY_PROFILE_SETTINGS_PATH = report_path.parent / "legacy-profile" / "settings.json"
+    try:
+        _check_dependencies(report_path)
+    finally:
+        settings.PROFILE_SETTINGS_PATH = profile
+        settings.LEGACY_PROFILE_SETTINGS_PATH = legacy_profile
+
+
+def _check_dependencies(report_path):
     # Import application dependencies inside the diagnostic handler so a
     # windowed executable reports startup errors without an invisible dialog.
     from chemotion_sample_manager import gui
@@ -61,7 +74,7 @@ def self_test(report_path):
         if not (Path(chemotion_sample_manager.__file__).resolve().parent / "assets" / "icon.png").is_file():
             raise RuntimeError("The bundle is missing the application icon.")
     ChemotionClient()
-    Path(report_path).write_text(json.dumps({
+    report_path.write_text(json.dumps({
         "frozen": bool(getattr(sys, "frozen", False)),
         "python": sys.version.split()[0],
         "tcl": interpreter.eval("info patchlevel"),

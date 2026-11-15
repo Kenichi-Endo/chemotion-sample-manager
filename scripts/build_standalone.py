@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import plistlib
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -68,6 +69,9 @@ def build():
     if sys.platform == "darwin":
         bundle = bundle_output / f"{NAME}.app"
         executable = bundle / "Contents" / "MacOS" / NAME
+        architecture = subprocess.check_output(["lipo", "-archs", str(executable)], text=True).strip()
+        if architecture != platform.machine():
+            raise RuntimeError(f"The packaged Mac executable has unexpected architecture {architecture}.")
         plist_path = bundle / "Contents" / "Info.plist"
         with plist_path.open("rb") as stream:
             info = plistlib.load(stream)
@@ -78,6 +82,13 @@ def build():
         subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(bundle)], check=True)
     else:
         executable = bundle_output / f"{NAME}.exe"
+        with executable.open("rb") as stream:
+            header = stream.read(64)
+            if len(header) != 64 or not header.startswith(b"MZ"):
+                raise RuntimeError("The Windows build has an invalid executable header.")
+            stream.seek(struct.unpack_from("<I", header, 60)[0])
+            if stream.read(6) != b"PE\x00\x00\x64\x86":
+                raise RuntimeError("The packaged Windows executable is not x64.")
 
     # Run from an unrelated folder with source import overrides removed. A
     # successful check must come from the bundle, not the development checkout.

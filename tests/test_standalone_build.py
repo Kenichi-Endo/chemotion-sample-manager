@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import struct
 import zipfile
 
 
@@ -17,6 +18,7 @@ def test_windows_archive_contains_only_executable_and_checks_it_in_isolation(tmp
     resources.mkdir()
     (resources / "chemotion-sample-manager-icon.png").write_bytes(b"icon")
     commands = []
+    executable_bytes = b"MZ" + bytes(58) + struct.pack("<I", 64) + b"PE\x00\x00\x64\x86"
 
     def run(command, **kwargs):
         commands.append(command)
@@ -25,13 +27,13 @@ def test_windows_archive_contains_only_executable_and_checks_it_in_isolation(tmp
             assert "--onedir" not in command
             output = Path(command[command.index("--distpath") + 1])
             output.mkdir(parents=True)
-            (output / f"{builder.NAME}.exe").write_bytes(b"fake executable")
+            (output / f"{builder.NAME}.exe").write_bytes(executable_bytes)
             # Simulate stale output from a previous directory-based build.
             (output / "_internal").mkdir()
             (output / "_internal" / "dependency.dll").write_bytes(b"dependency")
         else:
             checked_executable = Path(command[0])
-            assert checked_executable.read_bytes() == b"fake executable"
+            assert checked_executable.read_bytes() == executable_bytes
             assert checked_executable.parent == Path(kwargs["cwd"])
             assert not (checked_executable.parent / "_internal").exists()
             Path(command[2]).write_text(json.dumps({"frozen": True}))
@@ -49,4 +51,4 @@ def test_windows_archive_contains_only_executable_and_checks_it_in_isolation(tmp
     archive = tmp_path / "dist" / "standalone" / "chemotion-sample-manager-0.1.1-windows-x64.zip"
     with zipfile.ZipFile(archive) as zipped:
         assert zipped.namelist() == [f"{builder.NAME}.exe"]
-        assert zipped.read(f"{builder.NAME}.exe") == b"fake executable"
+        assert zipped.read(f"{builder.NAME}.exe") == executable_bytes
