@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Kenichi Endo" }]
 dependencies = [
   "resvg-py>=0.5,<0.6",
-  "chemotion-api @ https://github.com/Chemotion/chemotionapi/archive/7e04ee0c4a44256984a69e57f20ba4792fdb56fb.tar.gz",
+  "chemotion-api @ https://github.com/Chemotion/chemotionapi/archive/b6457e43d174ea21eb95d46851c72e1237bbe25b.tar.gz",
   "python-magic-bin==0.4.14; sys_platform == 'win32'",
 ]
 scripts = { chemotion-sample-manager = "chemotion_sample_manager.__main__:main" }

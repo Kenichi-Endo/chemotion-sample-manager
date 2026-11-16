@@ -80,7 +80,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 Edit the Python files in `src/chemotion_sample_manager/` manually or with a coding agent, then restart the customizable launcher.
 
 ## Data handling
-The app uses [chemotionapi](https://github.com/Chemotion/chemotionapi/tree/v401.0.0) version **401.0.0** for its authenticated connection.
+The app uses [chemotionapi](https://github.com/Chemotion/chemotionapi/tree/v401.1.0) version **401.1.0** for its authenticated connection.
 
 - **Library methods** handle sign-in (`Instance.login()`), collection loading (`Instance.get_root_collection()`), the first page of a sample list (`ElementSet.load_elements()`), individual sample details (`Instance.get_sample()`), saving sample fields (`Sample.save()`), and sample removal (`Collection.remove_elements()`).
 - **Custom API requests** handle batch sample-list pages, batch sample details, vendor metadata, creating molecule names, structure images, and collection export.
