@@ -303,28 +303,40 @@ def test_sample_name_batch_preserves_rows_and_continues_after_failure(monkeypatc
 
 
 @pytest.mark.parametrize("confirmed", [False, True])
-def test_related_properties_preview_adds_rows_before_prompting(monkeypatch, confirmed):
+@pytest.mark.parametrize("show_structures", [False, True])
+def test_related_properties_preview_adds_rows_before_prompting(monkeypatch, confirmed, show_structures):
     source = {"id": 1, "label": "KE-1", "structure": "old.svg"}
     existing = {"id": 2}
-    found = {"id": 3}
+    found = {"id": 3, "structure": "relative.svg"}
     rendered = []
     reloaded = []
     writes = []
     finished = []
+    idle_callbacks = []
+    loaded = []
+    prompts = []
     viewer = SimpleNamespace(
         rows=[source, existing], render_rows=lambda: rendered.append(viewer.rows.copy()),
-        column_visibility={"structure": SimpleNamespace(get=lambda: False)},
+        column_visibility={"structure": SimpleNamespace(get=lambda: show_structures)},
         status=SimpleNamespace(configure=lambda **kwargs: None), colors={"muted": "gray"},
         update_idletasks=lambda: None,
         _finish_sample_edit=lambda: finished.append(True),
         _copy_related_properties=lambda *args: writes.append(args),
         _reload_structure_images=reloaded.extend,
+        lineage_sample_list=None,
         after=lambda delay, callback, *args: callback(*args),
+        after_idle=lambda callback, *args: idle_callbacks.append(lambda: callback(*args)),
+        filtered_rows=lambda: viewer.rows,
+        structure_images={}, structure_image_waiters={}, structure_rows_pending=set(),
+        load_structure_images=loaded.extend,
     )
     viewer._confirm_related_properties = app.SampleManager._confirm_related_properties.__get__(viewer)
     viewer._preview_related_properties = app.SampleManager._preview_related_properties.__get__(viewer)
+    viewer._show_related_properties_confirmation = (
+        app.SampleManager._show_related_properties_confirmation.__get__(viewer))
 
     def confirm(*args, **kwargs):
+        prompts.append(True)
         assert rendered == [[source, existing, found]]
         assert reloaded == [source]
         assert source["structure"] == "fresh.svg"
@@ -344,6 +356,19 @@ def test_related_properties_preview_adds_rows_before_prompting(monkeypatch, conf
     app.SampleManager._find_relatives_for_copy(viewer, [source])
 
     assert viewer.rows == [source, existing, found]
+    assert not prompts
+    if show_structures:
+        assert loaded == [source, existing, found]
+        assert not idle_callbacks
+        app.SampleManager._structure_image_finished(viewer, "fresh.svg")
+        idle_callbacks.pop(0)()
+        assert not idle_callbacks
+        assert not prompts
+        app.SampleManager._structure_image_finished(viewer, "relative.svg")
+        idle_callbacks.pop(0)()
+        assert not prompts
+    idle_callbacks.pop(0)()
+    assert prompts == [True]
     assert writes == ([([source], relatives)] if confirmed else [])
     assert finished == ([] if confirmed else [True])
 

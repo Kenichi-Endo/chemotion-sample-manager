@@ -1274,7 +1274,7 @@ class SampleManager(tk.Tk):
             source = rows[0].get("structure") if rows else None
             if (self.column_visibility["structure"].get() and source
                     and source not in self.structure_images):
-                self.structure_image_waiters.setdefault(source, []).append(displayed)
+                self.structure_image_waiters.setdefault(source, []).append(displayed.set)
             else:
                 self.after_idle(displayed.set)
         if self.column_visibility["structure"].get():
@@ -1644,8 +1644,8 @@ class SampleManager(tk.Tk):
         if self.structure_rows_pending.intersection(ready_ids):
             self.structure_rows_pending.difference_update(ready_ids)
             self.render_rows()
-        for displayed in self.structure_image_waiters.pop(source, []):
-            self.after_idle(displayed.set)
+        for callback in self.structure_image_waiters.pop(source, []):
+            self.after_idle(callback)
     def update_lineage_buttons(self, _event=None):
         enabled = self.logged_in and not self.collection_selection_locked and self.tree.selection()
         for button in self.lineage_buttons:
@@ -1696,9 +1696,26 @@ class SampleManager(tk.Tk):
         existing_ids = {row["id"] for row in self.rows}
         self.rows.extend(row for row in relatives if row["id"] not in existing_ids)
         self.render_rows()
-        if self.column_visibility["structure"].get():
-            self.load_structure_images(relatives)
         self.status.configure(text=f"Found {len(relatives)} related samples.", fg=self.colors["muted"])
+        if self.column_visibility["structure"].get():
+            preview_ids = {row["id"] for row in sources + relatives}
+            preview_rows = [row for row in self.filtered_rows() if row["id"] in preview_ids]
+            pending = {row["structure"] for row in preview_rows
+                       if row.get("structure") and row["structure"] not in self.structure_images}
+            if pending:
+                def thumbnail_finished(source):
+                    pending.remove(source)
+                    if not pending:
+                        self.after_idle(self._show_related_properties_confirmation, sources, relatives)
+
+                for source in pending:
+                    self.structure_image_waiters.setdefault(source, []).append(
+                        lambda source=source: thumbnail_finished(source))
+                self.load_structure_images(preview_rows)
+                return
+        self.after_idle(self._show_related_properties_confirmation, sources, relatives)
+
+    def _show_related_properties_confirmation(self, sources, relatives):
         self.update_idletasks()
         if not messagebox.askyesno(
                 APP_NAME, f"Copy sample properties from the selected samples to the "

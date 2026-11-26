@@ -683,7 +683,7 @@ def test_thumbnail_acknowledgement_follows_image_assignment_and_idle_redraw(monk
     viewer = SimpleNamespace(
         structure_image_pending={source}, structure_images={},
         structure_rows_pending=set(),
-        structure_image_waiters={source: [displayed]},
+        structure_image_waiters={source: [displayed.set]},
         rows=[{"id": 10, "structure": source}],
         tree=SimpleNamespace(exists=lambda item: True,
                              item=lambda item, **kwargs: assigned.append((item, kwargs))),
