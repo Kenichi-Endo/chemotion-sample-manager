@@ -304,10 +304,11 @@ def test_sample_name_batch_preserves_rows_and_continues_after_failure(monkeypatc
 
 @pytest.mark.parametrize("confirmed", [False, True])
 def test_related_properties_preview_adds_rows_before_prompting(monkeypatch, confirmed):
-    source = {"id": 1}
+    source = {"id": 1, "label": "KE-1", "structure": "old.svg"}
     existing = {"id": 2}
     found = {"id": 3}
     rendered = []
+    reloaded = []
     writes = []
     finished = []
     viewer = SimpleNamespace(
@@ -317,10 +318,16 @@ def test_related_properties_preview_adds_rows_before_prompting(monkeypatch, conf
         update_idletasks=lambda: None,
         _finish_sample_edit=lambda: finished.append(True),
         _copy_related_properties=lambda *args: writes.append(args),
+        _reload_structure_images=reloaded.extend,
+        after=lambda delay, callback, *args: callback(*args),
     )
+    viewer._confirm_related_properties = app.SampleManager._confirm_related_properties.__get__(viewer)
+    viewer._preview_related_properties = app.SampleManager._preview_related_properties.__get__(viewer)
 
     def confirm(*args, **kwargs):
         assert rendered == [[source, existing, found]]
+        assert reloaded == [source]
+        assert source["structure"] == "fresh.svg"
         assert not writes
         return confirmed
 
@@ -329,7 +336,12 @@ def test_related_properties_preview_adds_rows_before_prompting(monkeypatch, conf
                         SimpleNamespace(start=lambda: target(*args)))
 
     relatives = [existing.copy(), found]
-    app.SampleManager._confirm_related_properties(viewer, [source], relatives)
+    client = SimpleNamespace(
+        related_samples=lambda *args, **kwargs: relatives,
+        inventory_entry=lambda *args: {"structure": "fresh.svg"},
+    )
+    monkeypatch.setattr(app, "ChemotionClient", lambda: client)
+    app.SampleManager._find_relatives_for_copy(viewer, [source])
 
     assert viewer.rows == [source, existing, found]
     assert writes == ([([source], relatives)] if confirmed else [])
@@ -380,6 +392,58 @@ def test_copy_sample_properties_keeps_the_destination_amounts(monkeypatch):
     assert saved[0]["real_amount_unit"] == "mg"
     assert saved[0]["target_amount_value"] == 17
     assert saved[0]["target_amount_unit"] == "mg"
+
+
+@pytest.mark.parametrize("selection", [("8",), ("7", "8")])
+def test_copy_structure_refreshes_only_a_single_selected_sample(monkeypatch, selection):
+    structure = {"molfile": "copied molfile", "molecule_id": 19}
+    loaded_images = []
+    finished = []
+    viewer = SimpleNamespace(
+        tree=SimpleNamespace(selection=lambda: selection),
+        logged_in=True, collection_selection_locked=False, copied_structure=None,
+        rows=[{"id": sample_id, "structure": "old.svg"} for sample_id in (7, 8)],
+        set_controls_busy=lambda busy: None, show_progress=lambda: None,
+        _progress=lambda message: None,
+        after=lambda delay, callback, *args: callback(*args),
+        copied_structure_label=SimpleNamespace(configure=lambda **kwargs: None),
+        status=SimpleNamespace(configure=lambda **kwargs: None), colors={"muted": ""},
+        _finish_sample_edit=lambda: finished.append(True),
+        column_visibility={"structure": SimpleNamespace(get=lambda: True)},
+        structure_images={"fresh.svg": object()}, structure_image_variants={},
+        structure_svg_data={}, load_structure_images=loaded_images.extend,
+        render_rows=lambda **kwargs: None,
+    )
+    viewer._copy_structure = app.SampleManager._copy_structure.__get__(viewer)
+    viewer._structure_copied = app.SampleManager._structure_copied.__get__(viewer)
+    viewer._reload_structure_images = app.SampleManager._reload_structure_images.__get__(viewer)
+
+    def get_sample_structure(sample_id):
+        assert sample_id == 8
+        return structure, "Source sample"
+
+    client = SimpleNamespace(
+        login=lambda: None, get_sample_structure=get_sample_structure,
+        inventory_entry=lambda sample_id, collection, synchronized: {"structure": "fresh.svg"},
+    )
+    monkeypatch.setattr(app, "ChemotionClient", lambda: client)
+    monkeypatch.setattr(app, "threading", SimpleNamespace(
+        Thread=lambda target, args, daemon: SimpleNamespace(start=lambda: target(*args))))
+
+    app.SampleManager.copy_structure(viewer)
+
+    assert viewer.rows[0]["structure"] == "old.svg"
+    if len(selection) == 1:
+        assert viewer.copied_structure == structure
+        assert viewer.rows[1]["structure"] == "fresh.svg"
+        assert loaded_images == [viewer.rows[1]]
+        assert "fresh.svg" not in viewer.structure_images
+        assert finished == [True]
+    else:
+        assert viewer.copied_structure is None
+        assert viewer.rows[1]["structure"] == "old.svg"
+        assert not loaded_images
+        assert not finished
 
 
 def test_structure_paste_refreshes_successful_rows_after_a_failure(monkeypatch):

@@ -1676,9 +1676,18 @@ class SampleManager(tk.Tk):
             relatives = client.related_samples(
                 [row["label"] for row in sources], {row["id"] for row in sources}, None,
                 progress=lambda message: self.after(0, self._progress, message))
-            self.after(0, self._confirm_related_properties, sources, relatives)
+            refreshed_sources = [row.copy() for row in sources]
+            for row in refreshed_sources:
+                refresh_inventory_row(client, row)
+            self.after(0, self._preview_related_properties, sources, refreshed_sources, relatives)
         except Exception as error:
             self.after(0, self._name_change_failed, "related sample properties", str(error))
+
+    def _preview_related_properties(self, sources, refreshed_sources, relatives):
+        for row, refreshed in zip(sources, refreshed_sources):
+            replace_inventory_row(row, refreshed)
+        self._reload_structure_images(sources)
+        self._confirm_related_properties(sources, relatives)
 
     def _confirm_related_properties(self, sources, relatives):
         if not relatives:
@@ -1765,26 +1774,43 @@ class SampleManager(tk.Tk):
         selected = self.tree.selection()
         if len(selected) != 1 or not self.logged_in or self.collection_selection_locked:
             return
+        row = next((row for row in self.rows if str(row["id"]) == selected[0]), None)
+        if row is None:
+            return
         self.sample_edit_saving = True
         self.set_controls_busy(True)
         self.show_progress()
         self._progress("Copying structure…")
-        threading.Thread(target=self._copy_structure, args=(int(selected[0]),), daemon=True).start()
+        threading.Thread(target=self._copy_structure, args=(row,), daemon=True).start()
 
-    def _copy_structure(self, sample_id):
+    def _copy_structure(self, row):
         try:
             client = ChemotionClient()
             client.login()
-            structure, name = client.get_sample_structure(sample_id)
-            self.after(0, self._structure_copied, structure, name)
+            structure, name = client.get_sample_structure(row["id"])
+            refreshed = dict(row)
+            refresh_inventory_row(client, refreshed)
+            self.after(0, self._structure_copied, structure, name, row, refreshed)
         except Exception as error:
             self.after(0, self._structure_copy_failed, str(error))
 
-    def _structure_copied(self, structure, name):
+    def _structure_copied(self, structure, name, row, refreshed):
         self.copied_structure = structure
         self.copied_structure_label.configure(text=f"Copied: {name}")
+        replace_inventory_row(row, refreshed)
+        self._reload_structure_images([row])
+        self.render_rows(preserve_display_order=True)
         self._finish_sample_edit()
         self.status.configure(text="Structure copied.", fg=self.colors["muted"])
+
+    def _reload_structure_images(self, rows):
+        for row in rows:
+            source = row.get("structure")
+            self.structure_images.pop(source, None)
+            self.structure_image_variants.pop(source, None)
+            self.structure_svg_data.pop(source, None)
+        if self.column_visibility["structure"].get():
+            self.load_structure_images(rows)
 
     def _structure_copy_failed(self, error):
         self._finish_sample_edit()
