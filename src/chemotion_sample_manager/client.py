@@ -228,7 +228,7 @@ class ChemotionClient:
             time.sleep(3)
         raise TimeoutError("The export is still pending. Check Chemotion notifications for its download link.")
 
-    def collections(self):
+    def collections(self, include_parent_collections=False):
         """Return selectable owned and shared collections."""
         root = self.instance.get_root_collection()
         records = [(root.all, False)]
@@ -238,12 +238,44 @@ class ChemotionClient:
         def add(collection, synchronized):
             for child in collection.get("children") or []:
                 add(child, synchronized)
-            if collection.get("id") is not None and not collection.get("children"):
+            if collection.get("id") is not None and (include_parent_collections or not collection.get("children")):
                 found[(collection["id"], synchronized)] = {**collection, "_synchronized": synchronized}
         for record, synchronized in records: add(record, synchronized)
         return sorted(found.values(), key=lambda item: str(item.get("label") or "").casefold())
 
-    def inventory(self, collection_id, synchronized=False, progress=None, cancelled=None, rows_loaded=None, sequential=False, row_ready=None, collections=None, newest_first=True):
+    def related_samples(self, labels, existing_ids, descendants, progress=None, cancelled=None, rows_loaded=None):
+        """Find split relatives in accessible collections using Chemotion short labels."""
+        labels = {label for label in labels if label}
+        if not labels:
+            return []
+        if descendants:
+            suffix = re.compile(r"(?:-[0-9]+)+$")
+
+            def matches(label):
+                return any(label.startswith(parent) and suffix.fullmatch(label[len(parent):])
+                           for parent in labels)
+        else:
+            parents = set()
+            for label in labels:
+                while re.search(r"-[0-9]+-[0-9]+$", label):
+                    label = label.rsplit("-", 1)[0]
+                    parents.add(label)
+            if not parents:
+                return []
+            matches = parents.__contains__
+
+        self.login()
+        collections = [
+            collection for collection in self.collections(include_parent_collections=True)
+            if collection.get("_synchronized")
+            or (collection.get("label") == "All" and collection.get("is_locked"))
+        ]
+        return self.inventory(
+            None, collections=collections, progress=progress, cancelled=cancelled,
+            rows_loaded=rows_loaded, sample_filter=lambda sample: (
+                sample["id"] not in existing_ids and matches(sample.get("short_label") or "")))
+
+    def inventory(self, collection_id, synchronized=False, progress=None, cancelled=None, rows_loaded=None, sequential=False, row_ready=None, collections=None, newest_first=True, sample_filter=None):
         """Retrieve the inventory, reporting progress through ``progress``."""
         stopped = threading.Event()
         rows = []
@@ -341,6 +373,8 @@ class ChemotionClient:
                         label = collection_labels[next_collection]
                         batch = []
                         for sample in page_samples.pop((next_collection, next_page)):
+                            if sample_filter is not None and not sample_filter(sample):
+                                continue
                             sample_id = sample["id"]
                             if sample_id not in sample_contexts:
                                 sample_contexts[sample_id] = collection

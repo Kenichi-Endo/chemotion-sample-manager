@@ -18,6 +18,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 ## Features
 - Browse samples from multiple collections in a customizable table with molecule structures and sample details.
 - Sort by column and filter by location or regular expression.
+- Find parent and descendant samples.
 - Edit sample details in bulk.
 - Remove samples from collections.
 - Open a sample in Chemotion for further inspection.
@@ -65,6 +66,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 - If you want to change collections or need only the loaded samples, press Esc or click **Stop**.
 - Adjust **Location** or **Filter** to filter the displayed samples.
 - Type while outside an input field to select rows by the sorted column.
+- To find related samples from other collections, select one or more rows and click **Find parents** or **Find descendants**. The app searches **All** and accessible shared collections and adds new matches to the table.
 - To edit one sample, click a cell. For **Location**, an existing location can be chosen from the dropdown. For **Amount**, include a unit such as `250 mg`. Press (Shift+)Return/Enter or Tab to save directly to Chemotion and move to the next cell, or Esc to cancel.
 - To edit multiple samples, use Command/Ctrl-click to select multiple samples, or Shift-click to select a range. Edit a cell in the selection to apply the value to all selected rows.
 - To check or edit a sample in Chemotion, double-click a structure or short label.
@@ -83,7 +85,7 @@ Edit the Python files in `src/chemotion_sample_manager/` manually or with a codi
 The app uses [chemotionapi](https://github.com/Chemotion/chemotionapi) for its authenticated connection.
 
 - **Library methods** handle sign-in (`Instance.login()`), collection loading (`Instance.get_root_collection()`), the first page of a sample list (`ElementSet.load_elements()`), individual sample details (`Instance.get_sample()`), saving sample fields (`Sample.save()`), and sample removal (`Collection.remove_elements()`).
-- **Custom API requests** handle batch sample-list pages, batch sample details, vendor metadata, creating molecule names, structure images, and collection export.
+- **Custom API requests** handle batch sample-list pages, batch sample details, vendor metadata, creating molecule names, structure images, and collection export. Parent and descendant lookup uses the same library and custom requests as inventory loading, with short-label matching performed locally.
 
 Sample information is retrieved over HTTPS and held in memory while the app is open.
 
@@ -101,7 +103,7 @@ Customizable launcher logs are in `~/Library/Logs/Chemotion Sample Manager/launc
   - `__init__.py` — Package identity and application name.
   - `__main__.py` — Entry point for the module and installed command.
   - `gui.py` — Window, inventory table, dialogs, cell editing, and structure thumbnails.
-  - `client.py` — Chemotion sign-in, sample retrieval and updates, and collection export.
+  - `client.py` — Chemotion sign-in, collection and sample retrieval, and sample updates through `chemotionapi` library methods and custom API requests.
   - `samples.py` — Sample rows, columns, formatting, sorting, and filtering.
   - `settings.py` — Preferences, print settings, and credential storage.
   - `printing.py` — PDF checklist generation.

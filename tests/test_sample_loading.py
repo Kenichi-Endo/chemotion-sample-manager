@@ -12,7 +12,7 @@ from requests import Response
 from chemotion_sample_manager import gui as app
 
 
-def mock_sample_list(monkeypatch, numbers):
+def mock_sample_list(monkeypatch, numbers, labels=None):
     monkeypatch.setattr(api_client, "CHEMOTION_URL", "https://eln.example.org")
     def send(self, request, **kwargs):
         response = Response()
@@ -25,7 +25,8 @@ def mock_sample_list(monkeypatch, numbers):
             return response
         assert request.url.endswith("/api/v1/samples.json")
         response._content = json.dumps({
-            "samples": [{"id": number, "type": "sample", "molecule": {}, "short_label": f"S{number}"}
+            "samples": [{"id": number, "type": "sample", "molecule": {},
+                         "short_label": labels[number] if labels else f"S{number}"}
                         for number in numbers],
         }).encode()
         response.headers["X-Total"] = str(len(numbers))
@@ -43,6 +44,34 @@ def prepare_client(monkeypatch):
                         lambda self, sample_id, *args: {"id": sample_id})
     monkeypatch.setattr(api_client, "MAX_CONCURRENT_SAMPLE_REQUESTS", 1)
     return api_client.ChemotionClient()
+
+
+@pytest.mark.parametrize("descendants, selected, existing, expected", [
+    (True, ["KE-1", "KE-1-2"], {1, 2}, {3, 4}),
+    (False, ["KE-1-2-3", "KE-1-2-4"], {3, 4}, {1, 2}),
+])
+def test_related_samples_append_only_new_split_relatives(monkeypatch, descendants, selected, existing, expected):
+    client = prepare_client(monkeypatch)
+    labels = {1: "KE-1", 2: "KE-1-2", 3: "KE-1-2-3", 4: "KE-1-2-4",
+              5: "KE-10-2", 6: "KE-1-2-copy", 7: "KE"}
+    mock_sample_list(monkeypatch, labels, labels)
+
+    def collections(include_parent_collections):
+        assert include_parent_collections
+        return [{"id": 9, "label": "All", "is_locked": True},
+                {"id": 10, "label": "Owned"},
+                {"id": 20, "label": "Shared", "_synchronized": True}]
+
+    monkeypatch.setattr(client, "collections", collections)
+    monkeypatch.setattr(api_client.ChemotionClient, "inventory_entry",
+                        lambda self, sample_id, collection_id, *args:
+                        {"id": sample_id, "collection_id": collection_id})
+    streamed = []
+    rows = client.related_samples(selected, existing, descendants, rows_loaded=streamed.extend)
+    assert {row["id"] for row in rows} == expected
+    assert len(rows) == len(streamed) == len(expected)
+    assert all(row["collection_id"] == 9 for row in rows)
+    assert all(row["collection"] == "Shared" for row in rows)
 
 
 def test_samples_load_in_descending_numeric_label_order(monkeypatch):

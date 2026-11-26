@@ -615,9 +615,17 @@ class SampleManager(tk.Tk):
         self.loading_order_menu = ttk.OptionMenu(loading_controls, self.loading_order,
                                                  self.loading_order.get(),
                                                  "Newest samples first", "Oldest samples first")
-        self.loading_order_menu.pack()
-        self.refresh_button = ttk.Button(loading_controls, text="Go", command=self.refresh)
-        self.refresh_button.pack(pady=(4, 0))
+        self.loading_order_menu.pack(anchor="w")
+        load_actions = ttk.Frame(loading_controls)
+        load_actions.pack(anchor="w", pady=(4, 0))
+        self.refresh_button = ttk.Button(load_actions, text="Go", command=self.refresh)
+        self.refresh_button.pack(side="left")
+        self.lineage_buttons = []
+        for text, descendants in (("Find parents", False), ("Find descendants", True)):
+            button = ttk.Button(load_actions, text=text, state="disabled",
+                                command=lambda descendants=descendants: self.find_related_samples(descendants))
+            button.pack(side="left", padx=(4, 0))
+            self.lineage_buttons.append(button)
 
         self.columns_button = ttk.Menubutton(self.display_controls, text="Columns")
         self.columns_menu = tk.Menu(self.columns_button, tearoff=False)
@@ -684,6 +692,7 @@ class SampleManager(tk.Tk):
         frame = ttk.Frame(self, padding=(12, 12, 12, 0), style="Inventory.TFrame"); frame.grid(row=1, column=0, sticky="nsew", padx=12); self.tree = InventoryTreeview(frame, columns=self.keys, displaycolumns=self.displayed_data_column_keys(), show="tree headings" if self.column_visibility["structure"].get() else "headings", style="Inventory.Treeview", selectmode="extended")
         self.style.pixel_tree = self.tree
         self.tree.bind("<<TreeviewSelect>>", self.remember_selection, add="+")
+        self.tree.bind("<<TreeviewSelect>>", self.update_lineage_buttons, add="+")
         enable_table_smooth_scrolling(self.tree)
         self.bind("<KeyPress>", self.select_row_by_typing, add="+")
         for field in (self.server_entry, self.username_entry, self.password_entry,
@@ -1157,8 +1166,61 @@ class SampleManager(tk.Tk):
             return
         self.inventory_cancel_event.set()
         self.refresh_button.configure(state="disabled")
-        self.status.configure(text="Stopping collection loading…", fg=self.colors["muted"])
+        message = "Stopping sample lookup…" if getattr(self, "lineage_lookup", None) else "Stopping collection loading…"
+        self.status.configure(text=message, fg=self.colors["muted"])
         return "break"
+    def find_related_samples(self, descendants):
+        if self.collection_selection_locked or not self.logged_in:
+            return
+        selected = set(self.tree.selection())
+        labels = [row["label"] for row in self.rows if str(row["id"]) in selected]
+        if not labels:
+            return
+        self.cancel_amount_edit()
+        self.edit_display_row_ids = None
+        self.lineage_lookup = "descendants" if descendants else "parents"
+        self.lineage_start_count = len(self.rows)
+        cancelled = threading.Event()
+        self.inventory_cancel_event = cancelled
+        self.inventory_loading = True
+        self.set_controls_busy(True)
+        self.show_progress()
+        self._progress(f"Finding {self.lineage_lookup}…", cancelled)
+        existing_ids = {row["id"] for row in self.rows}
+        threading.Thread(target=self._retrieve_related_samples,
+                         args=(labels, existing_ids, descendants, cancelled), daemon=True).start()
+
+    def _retrieve_related_samples(self, labels, existing_ids, descendants, cancelled):
+        try:
+            rows = ChemotionClient().related_samples(
+                labels, existing_ids, descendants,
+                progress=lambda message: self.after(0, self._progress, message, cancelled),
+                cancelled=cancelled,
+                rows_loaded=lambda batch: self.after(0, self._rows_loaded, batch, cancelled))
+            self.after(0, self._finish_lineage_lookup, cancelled, rows)
+        except InventoryLoadCancelled as stopped:
+            self.after(0, self._finish_lineage_lookup, cancelled, stopped.rows)
+        except Exception as error:
+            self.after(0, self._finish_lineage_lookup, cancelled, [], str(error))
+
+    def _finish_lineage_lookup(self, cancelled, rows, error=None):
+        if cancelled is not self.inventory_cancel_event:
+            return
+        kind = self.lineage_lookup
+        self.lineage_lookup = None
+        existing_ids = {row["id"] for row in self.rows}
+        self._loaded(self.rows + [row for row in rows if row["id"] not in existing_ids], cancelled)
+        added = len(self.rows) - self.lineage_start_count
+        message = f"Added {added} samples while finding {kind}."
+        if cancelled.is_set():
+            message = f"Lookup stopped. {message}"
+        elif error is not None:
+            message = f"Could not finish finding {kind}. {message}"
+            messagebox.showerror(APP_NAME, error)
+        self.status.configure(text=message, fg=self.colors["error" if error else "muted"])
+        if not added and error is None and not cancelled.is_set():
+            messagebox.showinfo(f"Find {kind}", f"No new {kind} found for the selected samples.", parent=self)
+
     def _retrieve(self, collection, cancelled, with_structures=False, newest_first=True):
         collections = [collection] if isinstance(collection, dict) else collection
         collection = collections[0]
@@ -1245,6 +1307,7 @@ class SampleManager(tk.Tk):
         self.password_entry.configure(state="disabled" if busy else "normal")
         self.remember_checkbutton.configure(state="disabled" if busy else "normal")
         self.collection_selection_locked = busy
+        self.update_lineage_buttons()
         self.loading_order_menu.configure(state="disabled" if busy else "normal")
         self.collection_menu.configure(state="normal" if self.collection_choices else "disabled")
         self.location_filter_menu.configure(state="disabled" if busy and not loading else "normal")
@@ -1382,7 +1445,8 @@ class SampleManager(tk.Tk):
                 return last_modified_sort_value(item.get(f"{key}_at"))
             return str(item.get(key, "")).casefold()
         rows = self.filtered_rows()
-        if getattr(self, "inventory_loading", False) and any("_inventory_position" in row for row in self.rows):
+        if (getattr(self, "inventory_loading", False) and not getattr(self, "lineage_lookup", None)
+                and any("_inventory_position" in row for row in self.rows)):
             # Concurrent details and thumbnails can finish in any order. Only
             # reveal the uninterrupted ready prefix of the original sample list.
             available = {row["_inventory_position"]: row for row in self.rows
@@ -1562,6 +1626,11 @@ class SampleManager(tk.Tk):
             self.render_rows()
         for displayed in self.structure_image_waiters.pop(source, []):
             self.after_idle(displayed.set)
+    def update_lineage_buttons(self, _event=None):
+        enabled = self.logged_in and not self.collection_selection_locked and self.tree.selection()
+        for button in self.lineage_buttons:
+            button.configure(state="normal" if enabled else "disabled")
+
     def remember_selection(self, _event=None):
         self.selected_row_ids = set(self.tree.selection())
         if self.editing_cell:
@@ -1678,7 +1747,7 @@ class SampleManager(tk.Tk):
         return "break"
     def edit_amount(self, event):
         """Edit the supported inventory fields directly in the table."""
-        if getattr(self, "sample_edit_saving", False):
+        if getattr(self, "sample_edit_saving", False) or getattr(self, "lineage_lookup", None):
             return
         item_id = self.tree.identify_row(event.y)
         if not item_id: return
