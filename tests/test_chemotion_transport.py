@@ -163,6 +163,55 @@ def test_prefetched_details_skip_individual_sample_request(client, sample_server
     assert [path for _, path, _ in calls] == ["/api/v1/chemicals"]
 
 
+def test_structure_copy_and_paste_updates_molecule_and_sample_svg(client, sample_server, monkeypatch):
+    sample, _ = sample_server
+    source = {"id": 8, "molfile": "source drawing", "molecule": {"id": 19, "molfile": "molecule default"},
+              "molecule_name_hash": {"value": 21, "label": "Source molecule"}}
+    original_send = client.connection.send
+    svg_requests = []
+    saved = []
+    svg_file = "a" * 128 + ".svg"
+
+    def send(request, **kwargs):
+        path = urlsplit(request.url).path
+        if path == "/api/v1/samples/8.json":
+            payload = {"sample": {**sample, **source}}
+        elif path == "/api/v1/samples/batch-refresh-svg":
+            svg, = json.loads(request.body)["svgs"]
+            svg_requests.append(svg)
+            payload = {"results": [{"success": True, "filename": svg["svg_path"]}]}
+        elif path == "/api/v1/samples/7" and request.method == "PUT":
+            body = json.loads(request.body)
+            saved.append(body)
+            sample.update(molfile=body["molfile"], molecule={"id": body["molecule_id"]},
+                          sample_svg_file=svg_file)
+            payload = {"sample": sample}
+        else:
+            return original_send(request, **kwargs)
+        response = Response()
+        response.request = request
+        response.status_code = 200
+        response._content = json.dumps(payload).encode()
+        return response
+
+    monkeypatch.setattr(client.connection, "send", send)
+    structure, name = client.get_sample_structure(8)
+    assert name == "Source molecule"
+    refreshed = client.set_sample_structure(7, structure)
+
+    svg, = svg_requests
+    assert svg["molfile"] == "source drawing"
+    body, = saved
+    assert body["sample_svg_file"] == svg["svg_path"]
+    assert body["molecule_id"] == 19
+    assert body["molecule_name_id"] == 21
+    assert body["molfile"] == "source drawing"
+    assert body["name"] == "Original"
+    assert body["container"] == sample["container"]
+    assert body["decoupled"] is True
+    assert refreshed["sample_svg_file"] == svg_file
+
+
 @pytest.mark.parametrize("method, args, expected", [
     ("set_location", ("New",), {"location": "New"}),
     ("set_density", ("1.25",), {"density": 1.25}),

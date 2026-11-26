@@ -301,6 +301,36 @@ def test_sample_name_batch_preserves_rows_and_continues_after_failure(monkeypatc
     assert failures == ([(rows[0], "Refresh failed")] if fail_first else [])
 
 
+def test_structure_paste_refreshes_successful_rows_after_a_failure(monkeypatch):
+    structure = {"molfile": "copied molfile", "molecule_id": 19}
+    rows = [{"id": sample_id, "structure": "old.svg", "collection_id": 3} for sample_id in (7, 8)]
+    callbacks = []
+    refreshed = []
+
+    def set_structure(sample_id, copied):
+        assert copied == structure
+        if sample_id == 7:
+            raise PermissionError("Read-only sample")
+        return {**copied, "sample_svg_file": "new.svg"}
+
+    def inventory_entry(sample_id, collection_id, synchronized, *, detail):
+        refreshed.append((sample_id, collection_id, synchronized))
+        return {"molecule_id": detail["molecule_id"], "structure": detail["sample_svg_file"]}
+
+    client = SimpleNamespace(login=lambda: None, set_sample_structure=set_structure,
+                             inventory_entry=inventory_entry)
+    monkeypatch.setattr(app, "ChemotionClient", lambda: client)
+    viewer = SimpleNamespace(after=lambda *args: callbacks.append(args), _progress=object(),
+                             _structure_paste_finished=object(), _name_change_failed=object())
+
+    app.SampleManager._paste_structure(viewer, rows, structure)
+
+    assert refreshed == [(8, 3, False)]
+    assert [row["structure"] for row in rows] == ["old.svg", "new.svg"]
+    assert rows[1]["molecule_id"] == 19
+    assert callbacks[-1][1:] == (viewer._structure_paste_finished, rows, [(rows[0], "Read-only sample")])
+
+
 def test_amount_refresh_rejects_missing_value_without_losing_row():
     row = {"id": 1, "amount_value": "2", "structure": "molecule.svg"}
     original = row.copy()

@@ -630,6 +630,17 @@ class SampleManager(tk.Tk):
         self.columns_button = ttk.Menubutton(self.display_controls, text="Columns")
         self.columns_menu = tk.Menu(self.columns_button, tearoff=False)
         self.columns_button.configure(menu=self.columns_menu); self.columns_button.pack(side="left", padx=4)
+        self.copied_structure = None
+        structure_actions = ttk.Frame(self.inventory_controls)
+        structure_actions.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.copy_structure_button = ttk.Button(
+            structure_actions, text="Copy structure", command=self.copy_structure, state="disabled")
+        self.copy_structure_button.pack(side="left", padx=4)
+        self.paste_structure_button = ttk.Button(
+            structure_actions, text="Paste structure", command=self.paste_structure, state="disabled")
+        self.paste_structure_button.pack(side="left", padx=4)
+        self.copied_structure_label = ttk.Label(structure_actions, wraplength=500)
+        self.copied_structure_label.pack(side="left", padx=4)
         ttk.Label(self.display_controls, text="Structure size:").pack(side="left", padx=(12, 0))
         self.structure_size_spinbox = ttk.Spinbox(self.display_controls, from_=20, to=200,
                                                  textvariable=self.structure_size_value, width=3)
@@ -693,6 +704,7 @@ class SampleManager(tk.Tk):
         self.style.pixel_tree = self.tree
         self.tree.bind("<<TreeviewSelect>>", self.remember_selection, add="+")
         self.tree.bind("<<TreeviewSelect>>", self.update_lineage_buttons, add="+")
+        self.tree.bind("<<TreeviewSelect>>", self.update_structure_buttons, add="+")
         enable_table_smooth_scrolling(self.tree)
         self.bind("<KeyPress>", self.select_row_by_typing, add="+")
         for field in (self.server_entry, self.username_entry, self.password_entry,
@@ -800,7 +812,7 @@ class SampleManager(tk.Tk):
     def layout_inventory_controls(self, _event):
         required_width = self.display_controls.winfo_reqwidth() + self.location_controls.winfo_reqwidth()
         wrap = required_width > self.inventory_controls.winfo_width()
-        row = 1 if wrap else 0
+        row = 2 if wrap else 0
         if self.location_controls.grid_info()["row"] != row:
             self.location_controls.grid_configure(
                 row=row, column=0 if wrap else 1, pady=(6, 0) if wrap else 0,
@@ -1057,6 +1069,9 @@ class SampleManager(tk.Tk):
         if self.logged_in:
             self.logged_in = False
             self.login_button.configure(text="Sign in", state="normal")
+            self.copied_structure = None
+            self.copied_structure_label.configure(text="")
+            self.update_structure_buttons()
     def load_collections(self):
         self.set_controls_busy(True); self.status.configure(text="Retrieving editable Chemotion collections…",fg=self.colors["accent"]); threading.Thread(target=self._retrieve_collections, daemon=True).start()
     def _retrieve_collections(self):
@@ -1308,6 +1323,7 @@ class SampleManager(tk.Tk):
         self.remember_checkbutton.configure(state="disabled" if busy else "normal")
         self.collection_selection_locked = busy
         self.update_lineage_buttons()
+        self.update_structure_buttons()
         self.loading_order_menu.configure(state="disabled" if busy else "normal")
         self.collection_menu.configure(state="normal" if self.collection_choices else "disabled")
         self.location_filter_menu.configure(state="disabled" if busy and not loading else "normal")
@@ -1630,6 +1646,77 @@ class SampleManager(tk.Tk):
         enabled = self.logged_in and not self.collection_selection_locked and self.tree.selection()
         for button in self.lineage_buttons:
             button.configure(state="normal" if enabled else "disabled")
+
+    def update_structure_buttons(self, _event=None):
+        count = len(self.tree.selection()) if self.logged_in and not self.collection_selection_locked else 0
+        self.copy_structure_button.configure(state="normal" if count == 1 else "disabled")
+        self.paste_structure_button.configure(
+            state="normal" if count and self.copied_structure is not None else "disabled")
+
+    def copy_structure(self):
+        selected = self.tree.selection()
+        if len(selected) != 1 or not self.logged_in or self.collection_selection_locked:
+            return
+        self.sample_edit_saving = True
+        self.set_controls_busy(True)
+        self.show_progress()
+        self._progress("Copying structure…")
+        threading.Thread(target=self._copy_structure, args=(int(selected[0]),), daemon=True).start()
+
+    def _copy_structure(self, sample_id):
+        try:
+            client = ChemotionClient()
+            client.login()
+            structure, name = client.get_sample_structure(sample_id)
+            self.after(0, self._structure_copied, structure, name)
+        except Exception as error:
+            self.after(0, self._structure_copy_failed, str(error))
+
+    def _structure_copied(self, structure, name):
+        self.copied_structure = structure
+        self.copied_structure_label.configure(text=f"Copied: {name}")
+        self._finish_sample_edit()
+        self.status.configure(text="Structure copied.", fg=self.colors["muted"])
+
+    def _structure_copy_failed(self, error):
+        self._finish_sample_edit()
+        self.status.configure(text="The structure could not be copied.", fg=self.colors["error"])
+        messagebox.showerror(APP_NAME, error)
+
+    def paste_structure(self):
+        if self.copied_structure is None or not self.logged_in or self.collection_selection_locked:
+            return
+        selected = set(self.tree.selection())
+        rows = [row for row in self.rows if str(row["id"]) in selected]
+        if rows:
+            self._start_sample_edit(rows, "structure", self._paste_structure, self.copied_structure)
+
+    def _paste_structure(self, rows, structure):
+        failures = []
+        try:
+            client = ChemotionClient()
+            client.login()
+            for position, row in enumerate(rows, start=1):
+                self.after(0, self._progress, f"Updating structure: {position} of {len(rows)}…")
+                try:
+                    previous_image = row.get("structure")
+                    detail = client.set_sample_structure(row["id"], structure)
+                    row.update(client.inventory_entry(
+                        row["id"], row.get("collection_id"), row.get("synchronized", False), detail=detail))
+                    if (row.get("molecule_id") != structure["molecule_id"]
+                            or detail.get("molfile") != structure["molfile"]
+                            or not detail.get("sample_svg_file") or row.get("structure") == previous_image):
+                        raise ConnectionError("Chemotion did not retain the copied structure or its new SVG.")
+                except Exception as error:
+                    failures.append((row, str(error)))
+            self.after(0, self._structure_paste_finished, rows, failures)
+        except Exception as error:
+            self.after(0, self._name_change_failed, "structure", str(error))
+
+    def _structure_paste_finished(self, rows, failures):
+        if self.column_visibility["structure"].get():
+            self.load_structure_images(rows)
+        self._batch_edit_finished(rows, failures, "structure")
 
     def remember_selection(self, _event=None):
         self.selected_row_ids = set(self.tree.selection())

@@ -1,6 +1,7 @@
 """Chemotion API access and inventory retrieval."""
 import json
 import re
+import secrets
 import tempfile
 import threading
 import time
@@ -125,6 +126,14 @@ class InventoryConnection(Connection):
 
 
 class InventorySample(Sample):
+    def _clean_properties_data(self, serialize_data=None):
+        data = super()._clean_properties_data(serialize_data)
+        structure_update = getattr(self, "structure_update", None)
+        if structure_update is not None:
+            data.pop("molecule", None)
+            data.update(structure_update)
+        return data
+
     @property
     def gas_type(self):
         # Inventory edits retain the stored gas settings. The upstream getter
@@ -581,7 +590,37 @@ class ChemotionClient:
         """Update the two sample flags together, retaining the current container."""
         self._save_sample(sample_id, {"decoupled": decoupled, "inventory_sample": inventory_sample})
 
-    def _save_sample(self, sample_id, properties, molecule_name_id=None):
+    def get_sample_structure(self, sample_id):
+        sample = self.instance.get_sample(sample_id).json_data
+        molecule = as_dict(sample.get("molecule"))
+        molfile = sample.get("molfile") or molecule.get("molfile")
+        if not molecule.get("id") or not isinstance(molfile, str) or not molfile.strip():
+            raise ValueError("This sample has no accessible molecular structure.")
+        name = as_dict(sample.get("molecule_name_hash"))
+        display_name = (name.get("label") or sample.get("showed_name") or molecule.get("iupac_name")
+                        or molecule.get("sum_formular") or "Unnamed molecule")
+        return {
+            "molfile": molfile,
+            "molecule_id": molecule["id"],
+            "molecule_name_id": name.get("value"),
+        }, display_name
+
+    def set_sample_structure(self, sample_id, structure):
+        # The ELN consumes the temporary SVG during the sample update, so each
+        # destination gets its own file and thumbnail URL.
+        filename = f"TMPFILE{secrets.token_hex(32)}.svg"
+        payload = {"svgs": [{"svg_path": filename, "molfile": structure["molfile"]}]}
+        response = json.loads(self.request(
+            "/api/v1/samples/batch-refresh-svg", json.dumps(payload).encode(),
+            {"Accept": "application/json", "Content-Type": "application/json"}, method="POST"))
+        results = response.get("results") or [{}]
+        result = results[0]
+        if not result.get("success") or result.get("filename") != filename:
+            raise ConnectionError(result.get("error") or "Chemotion could not generate the sample SVG.")
+        self._save_sample(sample_id, {}, structure_update={**structure, "sample_svg_file": filename})
+        return self.instance.get_sample(sample_id).json_data
+
+    def _save_sample(self, sample_id, properties, molecule_name_id=None, structure_update=None):
         # Fetch current data before saving: GUI rows may be stale and save()
         # serializes the complete sample, including its container and flags.
         sample = self.instance.get_sample(sample_id)
@@ -590,6 +629,8 @@ class ChemotionClient:
                                      json_data=sample.json_data, element_type="sample")
             # This is a full get_sample response, not a partial listing record.
             sample._data_loaded = True
+        if structure_update is not None:
+            sample.structure_update = structure_update
         for key, value in properties.items():
             sample.properties[key] = value
         if molecule_name_id is not None:
