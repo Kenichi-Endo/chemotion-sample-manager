@@ -267,24 +267,30 @@ class ChemotionClient:
         return lambda label: label in parents or any(
             label.startswith(parent) and suffix.fullmatch(label[len(parent):]) for parent in labels)
 
-    def related_samples(self, labels, existing_ids, descendants, progress=None, cancelled=None, rows_loaded=None):
+    def related_samples(self, labels, existing_ids, descendants, progress=None, cancelled=None, rows_loaded=None,
+                        sample_list=None, sample_list_loaded=None):
         """Find split relatives in accessible collections using Chemotion short labels."""
         matches = self.related_label_matcher(labels, descendants)
-        if matches is None:
+        if matches is None and (sample_list is not None or sample_list_loaded is None):
             return []
 
-        self.login()
-        collections = [
-            collection for collection in self.collections(include_parent_collections=True)
-            if collection.get("_synchronized")
-            or (collection.get("label") == "All" and collection.get("is_locked"))
-        ]
+        if sample_list is None:
+            self.login()
+            collections = [
+                collection for collection in self.collections(include_parent_collections=True)
+                if collection.get("_synchronized")
+                or (collection.get("label") == "All" and collection.get("is_locked"))
+            ]
+            pages = None
+        else:
+            collections, pages = sample_list
         return self.inventory(
             None, collections=collections, progress=progress, cancelled=cancelled,
             rows_loaded=rows_loaded, sample_filter=lambda sample: (
-                sample["id"] not in existing_ids and matches(sample.get("short_label") or "")))
+                matches is not None and sample["id"] not in existing_ids and matches(sample.get("short_label") or "")),
+            sample_pages=pages, sample_list_loaded=sample_list_loaded)
 
-    def inventory(self, collection_id, synchronized=False, progress=None, cancelled=None, rows_loaded=None, sequential=False, row_ready=None, collections=None, newest_first=True, sample_filter=None):
+    def inventory(self, collection_id, synchronized=False, progress=None, cancelled=None, rows_loaded=None, sequential=False, row_ready=None, collections=None, newest_first=True, sample_filter=None, sample_pages=None, sample_list_loaded=None):
         """Retrieve the inventory, reporting progress through ``progress``."""
         stopped = threading.Event()
         rows = []
@@ -348,6 +354,7 @@ class ChemotionClient:
             executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="sample-list")
             pending = {}
             page_samples = {}
+            saved_pages = {} if sample_list_loaded is not None and sample_pages is None else None
             page_counts = {}
             remaining_pages = {}
             completed_collections = 0
@@ -359,11 +366,17 @@ class ChemotionClient:
                     while len(pending) < workers and jobs:
                         check_cancelled()
                         index, page = jobs.popleft()
-                        pending[executor.submit(retrieve_page, selected[index], page)] = (index, page)
+                        if sample_pages is None:
+                            future = executor.submit(retrieve_page, selected[index], page)
+                        else:
+                            future = executor.submit(sample_pages.__getitem__, (index, page))
+                        pending[future] = (index, page)
                     done, _ = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
                     for future in done:
                         index, page = pending.pop(future)
                         batch, max_page = future.result()
+                        if saved_pages is not None:
+                            saved_pages[index, page] = (batch, max_page)
                         page_samples[index, page] = batch
                         if page == 1:
                             page_counts[index] = max_page
@@ -404,6 +417,9 @@ class ChemotionClient:
                         listing_finished.set()
                     for batch in ready_batches:
                         listing_queue.put(batch)
+                if saved_pages is not None:
+                    check_cancelled()
+                    sample_list_loaded((selected, saved_pages))
             except Exception as error:
                 listing_queue.put(error)
             finally:

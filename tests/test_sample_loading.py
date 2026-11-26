@@ -75,6 +75,29 @@ def test_related_samples_append_only_new_split_relatives(monkeypatch, descendant
     assert all(row["collection"] == "Shared" for row in rows)
 
 
+def test_lineage_reuses_unfiltered_lists_for_a_different_lookup(monkeypatch):
+    client = prepare_client(monkeypatch)
+    labels = {1: "KE-1", 2: "KE-1-2", 3: "KE-1-2-3"}
+    mock_sample_list(monkeypatch, labels, labels)
+    monkeypatch.setattr(client, "collections", lambda **kwargs: [
+        {"id": 9, "label": "All", "is_locked": True},
+        {"id": 20, "label": "Shared", "_synchronized": True},
+    ])
+    snapshots = []
+    rows = client.related_samples(["KE-1-2-3"], {2, 3}, False, sample_list_loaded=snapshots.append)
+    assert [(row["id"], row["collection"]) for row in rows] == [(1, "Shared")]
+
+    def unexpected_request(*args, **kwargs):
+        pytest.fail("Lineage lookup requested sample lists despite having a snapshot")
+
+    monkeypatch.setattr(client, "collections", unexpected_request)
+    monkeypatch.setattr(api_client.ElementSet, "load_elements", unexpected_request)
+    rows = client.related_samples(
+        ["KE-1"], {1, 3}, True, sample_list=snapshots[0], sample_list_loaded=snapshots.append)
+    assert [(row["id"], row["collection"]) for row in rows] == [(2, "Shared")]
+    assert len(snapshots) == 1
+
+
 def test_samples_load_in_descending_numeric_label_order(monkeypatch):
     client = prepare_client(monkeypatch)
     assert [row["id"] for row in client.inventory(42)] == [10, 2, 1]

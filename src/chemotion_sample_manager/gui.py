@@ -612,10 +612,18 @@ class SampleManager(tk.Tk):
         self.loading_order = tk.StringVar(value=("Oldest samples first" if self.profile_settings.get("newest_samples_first") is False else "Newest samples first"))
         loading_controls = ttk.Frame(self.collection_controls)
         loading_controls.pack(side="left", padx=4)
-        self.loading_order_menu = ttk.OptionMenu(loading_controls, self.loading_order,
+        loading_options = ttk.Frame(loading_controls)
+        loading_options.pack(anchor="w")
+        self.loading_order_menu = ttk.OptionMenu(loading_options, self.loading_order,
                                                  self.loading_order.get(),
                                                  "Newest samples first", "Oldest samples first")
-        self.loading_order_menu.pack(anchor="w")
+        self.loading_order_menu.pack(side="left")
+        self.lineage_sample_list = None
+        self.sample_list_controls = ttk.Frame(loading_options)
+        self.sample_list_label = ttk.Label(self.sample_list_controls)
+        self.sample_list_label.pack(side="left")
+        ttk.Button(self.sample_list_controls, text="Remove",
+                   command=self.remove_lineage_sample_list).pack(side="left", padx=(4, 0))
         load_actions = ttk.Frame(loading_controls)
         load_actions.pack(anchor="w", pady=(4, 0))
         self.refresh_button = ttk.Button(load_actions, text="Go", command=self.refresh)
@@ -1072,6 +1080,7 @@ class SampleManager(tk.Tk):
     def connection_details_changed(self, *_args):
         if self.logged_in:
             self.logged_in = False
+            self.remove_lineage_sample_list()
             self.login_button.configure(text="Sign in", state="normal")
             self.copied_structure = None
             self.copied_structure_label.configure(text="")
@@ -1215,12 +1224,24 @@ class SampleManager(tk.Tk):
                 labels, existing_ids, descendants,
                 progress=lambda message: self.after(0, self._progress, message, cancelled),
                 cancelled=cancelled,
-                rows_loaded=lambda batch: self.after(0, self._rows_loaded, batch, cancelled))
+                rows_loaded=lambda batch: self.after(0, self._rows_loaded, batch, cancelled),
+                sample_list=self.lineage_sample_list,
+                sample_list_loaded=lambda snapshot: self.after(
+                    0, self._save_lineage_sample_list, snapshot, datetime.now()))
             self.after(0, self._finish_lineage_lookup, cancelled, rows)
         except InventoryLoadCancelled as stopped:
             self.after(0, self._finish_lineage_lookup, cancelled, stopped.rows)
         except Exception as error:
             self.after(0, self._finish_lineage_lookup, cancelled, [], str(error))
+
+    def _save_lineage_sample_list(self, snapshot, saved_at):
+        self.lineage_sample_list = snapshot
+        self.sample_list_label.configure(text=f"All sample list: {saved_at:%m-%d %H:%M}")
+        self.sample_list_controls.pack(side="left", padx=(8, 0))
+
+    def remove_lineage_sample_list(self):
+        self.lineage_sample_list = None
+        self.sample_list_controls.pack_forget()
 
     def _finish_lineage_lookup(self, cancelled, rows, error=None):
         if cancelled is not self.inventory_cancel_event:
@@ -1675,7 +1696,10 @@ class SampleManager(tk.Tk):
             client = ChemotionClient()
             relatives = client.related_samples(
                 [row["label"] for row in sources], {row["id"] for row in sources}, None,
-                progress=lambda message: self.after(0, self._progress, message))
+                progress=lambda message: self.after(0, self._progress, message),
+                sample_list=self.lineage_sample_list,
+                sample_list_loaded=lambda snapshot: self.after(
+                    0, self._save_lineage_sample_list, snapshot, datetime.now()))
             refreshed_sources = [row.copy() for row in sources]
             for row in refreshed_sources:
                 refresh_inventory_row(client, row)
