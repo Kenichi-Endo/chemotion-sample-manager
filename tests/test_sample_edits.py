@@ -2,6 +2,7 @@
 from chemotion_sample_manager import client as api_client, samples as inventory
 
 from types import SimpleNamespace
+import json
 
 import pytest
 
@@ -299,6 +300,86 @@ def test_sample_name_batch_preserves_rows_and_continues_after_failure(monkeypatc
     assert callbacks[-1][1] is viewer._batch_edit_finished
     failures = callbacks[-1][3]
     assert failures == ([(rows[0], "Refresh failed")] if fail_first else [])
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_related_properties_preview_adds_rows_before_prompting(monkeypatch, confirmed):
+    source = {"id": 1}
+    existing = {"id": 2}
+    found = {"id": 3}
+    rendered = []
+    writes = []
+    finished = []
+    viewer = SimpleNamespace(
+        rows=[source, existing], render_rows=lambda: rendered.append(viewer.rows.copy()),
+        column_visibility={"structure": SimpleNamespace(get=lambda: False)},
+        status=SimpleNamespace(configure=lambda **kwargs: None), colors={"muted": "gray"},
+        update_idletasks=lambda: None,
+        _finish_sample_edit=lambda: finished.append(True),
+        _copy_related_properties=lambda *args: writes.append(args),
+    )
+
+    def confirm(*args, **kwargs):
+        assert rendered == [[source, existing, found]]
+        assert not writes
+        return confirmed
+
+    monkeypatch.setattr(app.messagebox, "askyesno", confirm)
+    monkeypatch.setattr(app.threading, "Thread", lambda *, target, args, daemon:
+                        SimpleNamespace(start=lambda: target(*args)))
+
+    relatives = [existing.copy(), found]
+    app.SampleManager._confirm_related_properties(viewer, [source], relatives)
+
+    assert viewer.rows == [source, existing, found]
+    assert writes == ([([source], relatives)] if confirmed else [])
+    assert finished == ([] if confirmed else [True])
+
+
+def test_copy_sample_properties_keeps_the_destination_amounts(monkeypatch):
+    client = api_client.ChemotionClient()
+    monkeypatch.setattr(client.connection, "_schema_manager",
+                        SimpleNamespace(generate_model_type=lambda *args: "Sample"))
+    monkeypatch.setattr(api_client.GenericSegments, "all_classes", property(lambda self: []))
+    source = {
+        "id": 1, "type": "sample", "short_label": "KE-1", "name": "Source", "molfile": "source molfile",
+        "molecule": {"id": 19}, "real_amount_value": 8, "real_amount_unit": "g",
+        "target_amount_value": 9, "target_amount_unit": "g", "purity": 0.9,
+    }
+    destination = {
+        **source, "id": 2, "short_label": "KE-1-2", "name": "Destination",
+        "real_amount_value": 12, "real_amount_unit": "mg",
+        "target_amount_value": 17, "target_amount_unit": "mg", "purity": 0.6,
+    }
+    records = {1: source, 2: destination}
+
+    def get_sample(sample_id):
+        sample = api_client.Sample(api_client.GenericSegments(client.connection), client.connection,
+                                    json_data=records[sample_id], element_type="sample")
+        sample._data_loaded = True
+        return sample
+
+    monkeypatch.setattr(client.instance, "get_sample", get_sample)
+    monkeypatch.setattr(client, "inventory_entry", lambda *args, **kwargs: {"chemical_data": []})
+    saved = []
+    monkeypatch.setattr(api_client.InventorySample, "save",
+                        lambda sample: saved.append(sample._clean_properties_data()))
+    monkeypatch.setattr(client, "request", lambda path, data, *args, **kwargs: json.dumps({
+        "results": [{"success": True, "filename": json.loads(data)["svgs"][0]["svg_path"]}],
+    }).encode())
+
+    structure, properties, _ = client.get_sample_copy_properties(1)
+    client.set_sample_structure(2, structure, properties)
+
+    assert len(saved) == 1
+    assert saved[0]["name"] == "Source"
+    assert saved[0]["molfile"] == "source molfile"
+    assert saved[0]["purity"] == 0.9
+    assert saved[0]["short_label"] == "KE-1-2"
+    assert saved[0]["real_amount_value"] == 12
+    assert saved[0]["real_amount_unit"] == "mg"
+    assert saved[0]["target_amount_value"] == 17
+    assert saved[0]["target_amount_unit"] == "mg"
 
 
 def test_structure_paste_refreshes_successful_rows_after_a_failure(monkeypatch):

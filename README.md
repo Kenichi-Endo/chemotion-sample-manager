@@ -21,6 +21,7 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 - Find parent and descendant samples.
 - Edit sample details in bulk.
 - Copy a molecular structure to other samples.
+- Copy sample properties to parents and descendants.
 - Remove samples from collections.
 - Open a sample in Chemotion for further inspection.
 - Create A4 PDF checklists for sample verification.
@@ -70,7 +71,8 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 - To find related samples from other collections, select one or more rows and click **Find parents** or **Find descendants**. The app searches **All** and accessible shared collections and adds new matches to the table.
 - To edit one sample, click a cell. For **Location**, an existing location can be chosen from the dropdown. For **Amount**, include a unit such as `250 mg`. Press (Shift+)Return/Enter or Tab to save directly to Chemotion and move to the next cell, or Esc to cancel.
 - To edit multiple samples, use Command/Ctrl-click to select multiple samples, or Shift-click to select a range. Edit a cell in the selection to apply the value to all selected rows.
-- To copy a structure, select one sample and click **Copy structure**. Select destination sample(s) and click **Paste structure**.
+- To copy a structure, click **Copy structure**. Select destination sample(s) and click **Paste structure**.
+- To automatically update related samples, click **Copy properties to parents/descendants**. Amounts are not copied.
 - To check or edit a sample in Chemotion, double-click a structure or short label.
 - To remove a sample from all loaded collections, select it and press Delete.
 - To verify samples, click **Print…** to create an A4 checklist. Choose the columns and their order, page grouping, and optional **Correct** and **Incorrect** check columns.
@@ -88,6 +90,8 @@ The app uses [chemotionapi](https://github.com/Chemotion/chemotionapi) for its a
 
 - **Library methods** handle sign-in (`Instance.login()`), collection loading (`Instance.get_root_collection()`), the first page of a sample list (`ElementSet.load_elements()`), individual sample details and copying structures (`Instance.get_sample()`), saving sample fields and pasting structures (`Sample.save()`), and sample removal (`Collection.remove_elements()`).
 - **Custom API requests** handle batch sample-list pages, batch sample details, vendor metadata, creating molecule names, structure images (including SVG generation when pasting a structure), and collection export. Parent and descendant lookup uses the same library and custom requests as inventory loading, with short-label matching performed locally.
+
+Property copying uses short-label matching to find related samples. It saves structures and sample fields through `Sample.save()` and updates vendor metadata through the chemicals API. The destination’s actual and target amounts are preserved.
 
 Sample information is retrieved over HTTPS and held in memory while the app is open.
 

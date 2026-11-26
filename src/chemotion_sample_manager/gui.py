@@ -639,6 +639,10 @@ class SampleManager(tk.Tk):
         self.paste_structure_button = ttk.Button(
             structure_actions, text="Paste structure", command=self.paste_structure, state="disabled")
         self.paste_structure_button.pack(side="left", padx=4)
+        self.copy_related_properties_button = ttk.Button(
+            structure_actions, text="Copy properties to parents/descendants",
+            command=self.copy_related_properties, state="disabled")
+        self.copy_related_properties_button.pack(side="left", padx=4)
         self.copied_structure_label = ttk.Label(structure_actions, wraplength=500)
         self.copied_structure_label.pack(side="left", padx=4)
         ttk.Label(self.display_controls, text="Structure size:").pack(side="left", padx=(12, 0))
@@ -1652,6 +1656,110 @@ class SampleManager(tk.Tk):
         self.copy_structure_button.configure(state="normal" if count == 1 else "disabled")
         self.paste_structure_button.configure(
             state="normal" if count and self.copied_structure is not None else "disabled")
+        self.copy_related_properties_button.configure(state="normal" if count else "disabled")
+
+    def copy_related_properties(self):
+        if not self.logged_in or self.collection_selection_locked:
+            return
+        selected = set(self.tree.selection())
+        sources = [row for row in self.rows if str(row["id"]) in selected]
+        if not sources:
+            return
+        self.cancel_amount_edit()
+        self.edit_display_row_ids = None
+        self._start_sample_edit(sources, "related sample properties", self._find_relatives_for_copy)
+        self._progress("Finding parents and descendants…")
+
+    def _find_relatives_for_copy(self, sources):
+        try:
+            client = ChemotionClient()
+            relatives = client.related_samples(
+                [row["label"] for row in sources], {row["id"] for row in sources}, None,
+                progress=lambda message: self.after(0, self._progress, message))
+            self.after(0, self._confirm_related_properties, sources, relatives)
+        except Exception as error:
+            self.after(0, self._name_change_failed, "related sample properties", str(error))
+
+    def _confirm_related_properties(self, sources, relatives):
+        if not relatives:
+            self._related_properties_finished([], [])
+            return
+        existing_ids = {row["id"] for row in self.rows}
+        self.rows.extend(row for row in relatives if row["id"] not in existing_ids)
+        self.render_rows()
+        if self.column_visibility["structure"].get():
+            self.load_structure_images(relatives)
+        self.status.configure(text=f"Found {len(relatives)} related samples.", fg=self.colors["muted"])
+        self.update_idletasks()
+        if not messagebox.askyesno(
+                APP_NAME, f"Copy sample properties from the selected samples to the "
+                f"{len(relatives)} related samples found? Their amounts will be preserved.", parent=self):
+            self._finish_sample_edit()
+            return
+        threading.Thread(target=self._copy_related_properties,
+                         args=(sources, relatives), daemon=True).start()
+
+    def _copy_related_properties(self, sources, relatives):
+        updated = []
+        failures = []
+        try:
+            client = ChemotionClient()
+            client.login()
+            matchers = [(row, client.related_label_matcher([row["label"]], None)) for row in sources]
+            source_properties = {}
+            for position, relative in enumerate(relatives, start=1):
+                row = relative.copy()
+                self.after(0, self._progress, f"Copying properties: {position} of {len(relatives)}…")
+                matches = [source for source, matches_label in matchers
+                           if matches_label and matches_label(row["label"])]
+                if not matches:
+                    continue
+                if len(matches) > 1:
+                    failures.append((row, "More than one selected sample matches this relative."))
+                    continue
+                source_id = matches[0]["id"]
+                try:
+                    if source_id not in source_properties:
+                        source_properties[source_id] = client.get_sample_copy_properties(source_id)
+                    client.copy_sample_properties(row, *source_properties[source_id])
+                    refresh_inventory_row(client, row)
+                except Exception as error:
+                    failures.append((row, str(error)))
+                    # A failed vendor edit may follow a successful sample save.
+                    try:
+                        refresh_inventory_row(client, row)
+                    except Exception:
+                        continue
+                    self.after(0, self._refresh_visible_relative, row)
+                else:
+                    updated.append(row)
+            self.after(0, self._related_properties_finished, updated, failures)
+        except Exception as error:
+            self.after(0, self._name_change_failed, "related sample properties", str(error))
+
+    def _refresh_visible_relative(self, refreshed):
+        for row in self.rows:
+            if row["id"] == refreshed["id"]:
+                context = {key: row[key] for key in ("collection", "collection_id", "synchronized")
+                           if key in row}
+                replace_inventory_row(row, {**refreshed, **context})
+                break
+
+    def _related_properties_finished(self, updated, failures):
+        for row in updated:
+            self._refresh_visible_relative(row)
+        if self.column_visibility["structure"].get():
+            self.load_structure_images(self.rows)
+        self.render_rows()
+        self._finish_sample_edit()
+        message = f"Copied properties to {len(updated)} related samples."
+        if failures:
+            message += f" {len(failures)} could not be fully updated."
+        elif not updated:
+            message = "No parents or descendants found for the selected samples."
+        self.status.configure(text=message, fg=self.colors["error" if failures else "muted"])
+        if failures:
+            show_bulk_edit_failures("Some related samples could not be fully updated:", failures)
 
     def copy_structure(self):
         selected = self.tree.selection()

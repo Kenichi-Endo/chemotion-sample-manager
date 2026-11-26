@@ -49,6 +49,7 @@ def prepare_client(monkeypatch):
 @pytest.mark.parametrize("descendants, selected, existing, expected", [
     (True, ["KE-1", "KE-1-2"], {1, 2}, {3, 4}),
     (False, ["KE-1-2-3", "KE-1-2-4"], {3, 4}, {1, 2}),
+    (None, ["KE-1-2"], {2}, {1, 3, 4}),
 ])
 def test_related_samples_append_only_new_split_relatives(monkeypatch, descendants, selected, existing, expected):
     client = prepare_client(monkeypatch)

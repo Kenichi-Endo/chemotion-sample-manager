@@ -252,26 +252,26 @@ class ChemotionClient:
         for record, synchronized in records: add(record, synchronized)
         return sorted(found.values(), key=lambda item: str(item.get("label") or "").casefold())
 
-    def related_samples(self, labels, existing_ids, descendants, progress=None, cancelled=None, rows_loaded=None):
-        """Find split relatives in accessible collections using Chemotion short labels."""
+    @staticmethod
+    def related_label_matcher(labels, descendants):
         labels = {label for label in labels if label}
-        if not labels:
-            return []
-        if descendants:
-            suffix = re.compile(r"(?:-[0-9]+)+$")
-
-            def matches(label):
-                return any(label.startswith(parent) and suffix.fullmatch(label[len(parent):])
-                           for parent in labels)
-        else:
-            parents = set()
+        parents = set()
+        if descendants is not True:
             for label in labels:
                 while re.search(r"-[0-9]+-[0-9]+$", label):
                     label = label.rsplit("-", 1)[0]
                     parents.add(label)
-            if not parents:
-                return []
-            matches = parents.__contains__
+        if descendants is False or not labels:
+            return parents.__contains__ if parents else None
+        suffix = re.compile(r"(?:-[0-9]+)+$")
+        return lambda label: label in parents or any(
+            label.startswith(parent) and suffix.fullmatch(label[len(parent):]) for parent in labels)
+
+    def related_samples(self, labels, existing_ids, descendants, progress=None, cancelled=None, rows_loaded=None):
+        """Find split relatives in accessible collections using Chemotion short labels."""
+        matches = self.related_label_matcher(labels, descendants)
+        if matches is None:
+            return []
 
         self.login()
         collections = [
@@ -592,6 +592,10 @@ class ChemotionClient:
 
     def get_sample_structure(self, sample_id):
         sample = self.instance.get_sample(sample_id).json_data
+        return self._sample_structure(sample)
+
+    @staticmethod
+    def _sample_structure(sample):
         molecule = as_dict(sample.get("molecule"))
         molfile = sample.get("molfile") or molecule.get("molfile")
         if not molecule.get("id") or not isinstance(molfile, str) or not molfile.strip():
@@ -605,7 +609,7 @@ class ChemotionClient:
             "molecule_name_id": name.get("value"),
         }, display_name
 
-    def set_sample_structure(self, sample_id, structure):
+    def set_sample_structure(self, sample_id, structure, properties=None):
         # The ELN consumes the temporary SVG during the sample update, so each
         # destination gets its own file and thumbnail URL.
         filename = f"TMPFILE{secrets.token_hex(32)}.svg"
@@ -617,8 +621,45 @@ class ChemotionClient:
         result = results[0]
         if not result.get("success") or result.get("filename") != filename:
             raise ConnectionError(result.get("error") or "Chemotion could not generate the sample SVG.")
-        self._save_sample(sample_id, {}, structure_update={**structure, "sample_svg_file": filename})
+        properties = dict(properties or {})
+        structure_update = {**structure, "sample_svg_file": filename}
+        # Copy purity in the sample payload without recalculating reaction quantities.
+        if "purity" in properties:
+            structure_update["purity"] = properties.pop("purity")
+        self._save_sample(sample_id, properties, structure_update=structure_update)
         return self.instance.get_sample(sample_id).json_data
+
+    def get_sample_copy_properties(self, sample_id):
+        source = self.instance.get_sample(sample_id)
+        detail = source.json_data
+        structure, _ = self._sample_structure(detail)
+        fields = (
+            "name", "description", "external_label", "location", "density", "purity",
+            "solvent", "dry_solvent", "stereo", "molarity", "molecular_mass", "sum_formula",
+            "boiling_point_lowerbound", "boiling_point_upperbound", "melting_point_lowerbound",
+            "melting_point_upperbound", "decoupled", "inventory_sample",
+        )
+        properties = {key: source.properties[key] for key in fields if key in source.properties}
+        for key in ("dry_solvent", "impurities"):
+            if key in detail:
+                properties[key] = detail[key]
+        if not properties.get("location"):
+            properties["location"] = as_dict(detail.get("container")).get("name") or ""
+        chemical = self.inventory_entry(sample_id, detail=detail)
+        vendor = inventory_vendor({"chemical_data": chemical["chemical_data"]})
+        return structure, properties, vendor or detail.get("vendor") or detail.get("supplier") or ""
+
+    def copy_sample_properties(self, row, structure, properties, vendor):
+        sample_id = row["id"]
+        detail = self.set_sample_structure(sample_id, structure, properties)
+        if (as_dict(detail.get("molecule")).get("id") != structure["molecule_id"]
+                or detail.get("molfile") != structure["molfile"] or not detail.get("sample_svg_file")):
+            raise ConnectionError("Chemotion did not retain the copied structure or its SVG.")
+        chemical = self.inventory_entry(
+            sample_id, row.get("collection_id"), row.get("synchronized", False), detail=detail)
+        if chemical["vendor"] != shown(vendor):
+            self.set_vendor(sample_id, chemical["chemical_data"], vendor,
+                            chemical["chemical_id"], chemical["chemical_cas"])
 
     def _save_sample(self, sample_id, properties, molecule_name_id=None, structure_update=None):
         # Fetch current data before saving: GUI rows may be stale and save()
