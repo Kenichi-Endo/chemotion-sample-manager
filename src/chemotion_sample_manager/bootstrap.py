@@ -136,16 +136,25 @@ def main(argv=None):
                 print(f"Environment ready: {python.parent.parent}")
                 return 0
             command_arguments = ["-m", "chemotion_sample_manager", *app_arguments]
+            environment = None
             if sys.platform == "win32":
+                executable = project_root / "launchers" / "windows" / f"{APP_NAME}.exe"
+                if executable.is_file():
+                    environment = os.environ.copy()
+                    environment["CHEMOTION_SAMPLE_MANAGER_LAUNCHER"] = str(executable)
+                    icon = (project_root / "launchers" / "macos" / f"{APP_NAME}.app"
+                            / "Contents" / "Resources" / "chemotion-sample-manager-icon.png")
+                    environment["CHEMOTION_SAMPLE_MANAGER_ICON"] = str(icon)
                 pythonw = python.with_name("pythonw.exe")
                 if pythonw.is_file():
                     subprocess.Popen([str(pythonw), *command_arguments],
                                      stdin=subprocess.DEVNULL, stdout=log,
-                                     stderr=subprocess.STDOUT, cwd=project_root)
+                                     stderr=subprocess.STDOUT, cwd=project_root,
+                                     env=environment)
                     return 0
             return subprocess.run([str(python), *command_arguments],
                                   stdout=log, stderr=subprocess.STDOUT,
-                                  cwd=project_root).returncode
+                                  cwd=project_root, env=environment).returncode
         except Exception:
             traceback.print_exc(file=log)
             print(f"{APP_NAME} could not start. See {log_path} for details.", file=sys.stderr)

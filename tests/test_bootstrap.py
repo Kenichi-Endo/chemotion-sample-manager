@@ -105,6 +105,10 @@ def test_launcher_runs_package_module(tmp_path, monkeypatch, platform_name, wind
 
     monkeypatch.setattr(bootstrap.sys, "platform", platform_name)
     project = tmp_path / "source checkout"
+    launcher = project / "launchers/windows/Chemotion Sample Manager.exe"
+    if platform_name == "win32":
+        launcher.parent.mkdir(parents=True)
+        launcher.touch()
     monkeypatch.setattr(bootstrap, "__file__", str(project / "src/chemotion_sample_manager/bootstrap.py"))
     monkeypatch.setattr(bootstrap, "state_directory", lambda: tmp_path / "state")
     monkeypatch.setattr(bootstrap, "prepare_environment", lambda *args: python)
@@ -115,6 +119,11 @@ def test_launcher_runs_package_module(tmp_path, monkeypatch, platform_name, wind
     executable = python.with_name("pythonw.exe") if windowless else python
     assert commands[0][0] == [str(executable), "-m", "chemotion_sample_manager", "example argument"]
     assert commands[0][1]["cwd"] == project
+    environment = commands[0][1]["env"]
+    if platform_name == "win32":
+        assert environment["CHEMOTION_SAMPLE_MANAGER_LAUNCHER"] == str(launcher)
+    else:
+        assert environment is None
     assert "Starting the Chemotion Sample Manager launcher." in (project / "logs/launcher.log").read_text()
 
 

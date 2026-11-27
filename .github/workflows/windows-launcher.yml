@@ -7,6 +7,8 @@ on:
       - '.github/workflows/windows-launcher.yml'
       - 'scripts/build_windows_launcher.ps1'
       - 'scripts/windows-launcher.cs'
+      - 'scripts/Chemotion Sample Manager.ico'
+      - 'scripts/start-windows.cmd'
       - 'launchers/windows/**'
       - 'src/chemotion_sample_manager/bootstrap.py'
       - 'pyproject.toml'
@@ -42,6 +44,8 @@ jobs:
           $project = Join-Path $env:RUNNER_TEMP 'Chemotion launcher smoke test'
           New-Item -ItemType Directory -Path $project | Out-Null
           Copy-Item -Path launchers, src, pyproject.toml, README.md, LICENSE, MANIFEST.in -Destination $project -Recurse
+          $scripts = New-Item -ItemType Directory -Path (Join-Path $project 'scripts')
+          Copy-Item -LiteralPath 'scripts/start-windows.cmd' -Destination $scripts.FullName
           $env:LOCALAPPDATA = Join-Path $project 'test profile'
           $env:APPDATA = $env:LOCALAPPDATA
           $log = Join-Path $project 'logs/launcher.log'

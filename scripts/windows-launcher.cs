@@ -10,12 +10,12 @@ internal static class Launcher
     {
         bool setupOnly = args.Length == 1 && args[0] == "--setup-only";
         string directory = Path.GetDirectoryName(Application.ExecutablePath);
-        string script = Path.Combine(directory, "Chemotion Sample Manager.cmd");
+        string script = Path.GetFullPath(Path.Combine(directory, @"..\..\scripts\start-windows.cmd"));
 
         try
         {
             if (!File.Exists(script))
-                throw new FileNotFoundException("Keep the launcher beside Chemotion Sample Manager.cmd.", script);
+                throw new FileNotFoundException("Keep Chemotion Sample Manager.exe in the project’s launchers\\windows folder.", script);
 
             var start = new ProcessStartInfo
             {

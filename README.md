@@ -42,20 +42,28 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 
 ### Customizable launcher
 1. Install Python 3.14, if not installed: [Python for macOS](https://www.python.org/downloads/macos/) or [Python for Windows](https://www.python.org/downloads/windows/). On Windows, select **Add python.exe to PATH** and keep **tcl/tk and IDLE** selected during installation.
-2. Download **Source code (zip)** from [Releases](https://github.com/Kenichi-Endo/chemotion-sample-manager/releases) and extract it, or clone the repository.
-3. Locate the launcher in `launchers/`. Do not change its location.
+2. Download and extract the [current source code (ZIP)](https://github.com/Kenichi-Endo/chemotion-sample-manager/archive/refs/heads/main.zip), or clone the repository.
+3. Open the launcher in the project folder.
+   - **macOS** — `launchers/macos/Chemotion Sample Manager.app`.
+     - If macOS says **“Chemotion Sample Manager.app” cannot be opened** when you open the customizable launcher
+       1. Open Terminal.
+       2. Type `cd ` (including the space).
+       3. Drag the extracted project folder into Terminal and press Return.
+       4. Run the following commands.
+
+          ```sh
+          chmod +x "launchers/macos/Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager"
+          sh "launchers/macos/Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager"
+          ```
+
+       5. Wait for startup to finish, then close the app and Terminal. Open the app from Finder for subsequent launches.
+     - If **Chemotion Sample Manager could not find its project folder** appears because macOS opened the app from an isolated location, move the app to another folder in Finder, then move it back to `launchers/macos` inside the project folder and reopen it.
+   - **Windows** — `launchers/windows/Chemotion Sample Manager.exe`.
 
 ### Common setup
 1. Open the app.
-   - On macOS, if you see **Apple could not verify “Chemotion Sample Manager” is free of malware that may harm your Mac or compromise your privacy.**, dismiss the warning. Open **[System Settings → Privacy & Security](x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension)**, scroll down to the bottom, select **Open Anyway**, and confirm.
-     If macOS says **The application “Chemotion Sample Manager.app” cannot be opened** when you open the customizable launcher:
-     1. Open [Terminal](file:///System/Applications/Utilities/Terminal.app), type `cd ` (including the space), drag the extracted project folder into Terminal, and press Return.
-     2. Run:
-        ```sh
-        chmod +x "launchers/macos/Chemotion Sample Manager.app/Contents/MacOS/Chemotion Sample Manager"
-        ```
-     3. Reopen the launcher.
-   - On Windows, if you see **Windows protected your PC**, select **More info → Run anyway**.
+   - **macOS**: If you see a verification warning, dismiss it, then open **[System Settings → Privacy & Security](x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension) → Open Anyway** and confirm.
+   - **Windows**: If you see **Windows protected your PC**, select **More info → Run anyway**.
 2. Keep an internet connection with access to GitHub available while the launcher installs dependencies on its first run. This may take a few minutes.
 3. Enter the Chemotion server root URL (for example, `https://eln.example.org`), your username, and password, then select **Sign in**.
 4. Select collections (use Cmd/Ctrl/Shift-click for multiple selection).
@@ -64,7 +72,6 @@ Chemotion Sample Manager is a desktop app based on [Chemotion API](https://githu
 7. Adjust **Font size** and **Structure size**.
 
 ## Use
-- Launch the app.
 - If you want to change collections or need only the loaded samples, press Esc or click **Stop**.
 - Adjust **Location** or **Filter** to filter the displayed samples.
 - Type while outside an input field to select rows by the sorted column.
@@ -119,7 +126,7 @@ The customizable launcher writes startup logs to `logs/launcher.log` in the proj
   - `bootstrap.py` — Python environment and dependency setup for the customizable launchers.
   - `standalone.py` — Standalone app entry point and dependency checks.
 - `launchers/` — Customizable launchers.
-- `scripts/` — Standalone build and macOS icon scripts.
+- `scripts/` — Standalone builds, Windows launcher build and startup scripts, and macOS icon generation.
 - `logs/` — Startup logs from the customizable launcher.
 - `tests/` — Automated tests.
 - `pyproject.toml` — Package configuration and dependencies.
