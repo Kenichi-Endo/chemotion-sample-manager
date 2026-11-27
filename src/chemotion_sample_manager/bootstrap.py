@@ -119,12 +119,16 @@ def main(argv=None):
     options, app_arguments = parser.parse_known_args(argv)
     project_root = Path(__file__).resolve().parents[2]
     state_root = state_directory()
-    log_directory = (Path.home() / "Library" / "Logs" / APP_NAME
-                     if sys.platform == "darwin" else state_root / "Logs")
-    log_directory.mkdir(parents=True, exist_ok=True)
-    log_path = log_directory / "launcher.log"
-    with log_path.open("a", encoding="utf-8") as log:
+    log_path = project_root / "logs" / "launcher.log"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log = log_path.open("a", encoding="utf-8")
+    except OSError as error:
+        print(f"Could not open the launcher log at {log_path}: {error}", file=sys.stderr)
+        return 1
+    with log:
         try:
+            print(f"Starting the {APP_NAME} launcher.", file=log, flush=True)
             if sys.version_info[:2] != (3, 14):
                 raise RuntimeError("Python 3.14 with Tk support is required.")
             python = prepare_environment(project_root, state_root, log)

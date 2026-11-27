@@ -102,7 +102,10 @@ Server and display preferences are saved separately in the current user's profil
 - macOS: `~/Library/Application Support/Chemotion Sample Manager/settings.json`
 - Windows: `%APPDATA%\Chemotion Sample Manager\settings.json`
 
-Customizable launcher logs are in `~/Library/Logs/Chemotion Sample Manager/launcher.log` on macOS or `%LOCALAPPDATA%\Chemotion Sample Manager\Logs\launcher.log` on Windows.
+The customizable launcher writes startup logs to `logs/launcher.log` in the project folder on macOS and Windows. The standalone app writes its startup log to the user profile.
+
+- macOS: `~/Library/Logs/Chemotion Sample Manager/standalone.log`
+- Windows: `%LOCALAPPDATA%/Chemotion Sample Manager/logs/standalone.log`
 
 ## Project structure
 - `src/chemotion_sample_manager/` — Python application code.
@@ -117,5 +120,6 @@ Customizable launcher logs are in `~/Library/Logs/Chemotion Sample Manager/launc
   - `standalone.py` — Standalone app entry point and dependency checks.
 - `launchers/` — Customizable launchers.
 - `scripts/` — Standalone build and macOS icon scripts.
+- `logs/` — Startup logs from the customizable launcher.
 - `tests/` — Automated tests.
 - `pyproject.toml` — Package configuration and dependencies.

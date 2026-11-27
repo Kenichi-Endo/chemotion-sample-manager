@@ -1,6 +1,7 @@
 """Exercise standalone diagnostics without opening a window or using a server."""
 
 import json
+from pathlib import Path
 import pytest
 import zipfile
 from types import SimpleNamespace
@@ -75,7 +76,8 @@ def test_self_test_cli_checks_dependencies_without_launching_gui(tmp_path, monke
     assert result["tcl"]
 
 
-def test_frozen_entry_point_uses_package_icon(tmp_path, monkeypatch):
+@pytest.mark.parametrize("platform_name", ["darwin", "win32"])
+def test_frozen_entry_point_uses_package_icon(tmp_path, monkeypatch, platform_name):
     package = tmp_path / "chemotion_sample_manager"
     assets = package / "assets"
     assets.mkdir(parents=True)
@@ -96,8 +98,16 @@ def test_frozen_entry_point_uses_package_icon(tmp_path, monkeypatch):
 
     monkeypatch.setattr(standalone.sys, "argv", ["sample_manager"])
     monkeypatch.delenv("CHEMOTION_SAMPLE_MANAGER_ICON", raising=False)
+    monkeypatch.setattr(standalone.sys, "platform", platform_name)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "LocalAppData"))
     launched = []
     monkeypatch.setattr(standalone, "launch_app", lambda: launched.append(True))
     standalone.main()
     assert standalone.os.environ["CHEMOTION_SAMPLE_MANAGER_ICON"] == str(icon)
     assert launched == [True]
+    if platform_name == "darwin":
+        log = tmp_path / "Library/Logs/Chemotion Sample Manager/standalone.log"
+    else:
+        log = tmp_path / "LocalAppData/Chemotion Sample Manager/logs/standalone.log"
+    assert "Starting Chemotion Sample Manager standalone." in log.read_text()

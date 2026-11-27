@@ -33,7 +33,6 @@ echo Select "Add python.exe to PATH" and keep "tcl/tk and IDLE" selected.
 :launch_failed
 echo.
 echo Chemotion Sample Manager could not start. Review the message above.
-echo Setup and launch errors are recorded in the current user's
-echo LocalAppData\Chemotion Sample Manager\Logs\launcher.log.
+if exist "%PROJECT_DIR%logs\launcher.log" echo Startup log: "%PROJECT_DIR%logs\launcher.log"
 pause
 exit /b 1

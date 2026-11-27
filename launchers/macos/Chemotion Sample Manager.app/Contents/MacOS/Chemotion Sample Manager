@@ -21,6 +21,10 @@ export CHEMOTION_SAMPLE_MANAGER_ICON="$icon"
 export PYTHONDONTWRITEBYTECODE=1
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
+log_dir="$project_dir/logs"
+mkdir -p "$log_dir" || exit 1
+exec >>"$log_dir/launcher.log" 2>&1
+
 # Finder supplies only a minimal PATH. Prefer the Python.org framework install,
 # which is also where this project's supported Python is installed.
 if [ -x /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 ]; then
@@ -35,7 +39,4 @@ if [ -z "$python" ]; then
 fi
 
 # The bootstrap installs project dependencies into a private environment.
-log_dir="$HOME/Library/Logs/Chemotion Sample Manager"
-mkdir -p "$log_dir" || exit 1
-log_file="$log_dir/launcher.log"
-exec "$python" "$bootstrap" "$@" >>"$log_file" 2>&1
+exec "$python" "$bootstrap" "$@"

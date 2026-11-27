@@ -10,6 +10,8 @@ import traceback
 import zipfile
 
 import chemotion_sample_manager
+from chemotion_sample_manager import APP_NAME
+from chemotion_sample_manager.bootstrap import state_directory
 
 
 def launch_app():
@@ -84,6 +86,12 @@ def _check_dependencies(report_path):
     }, indent=2) + "\n", encoding="utf-8")
 
 
+def standalone_log_path():
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Logs" / APP_NAME / "standalone.log"
+    return state_directory() / "logs" / "standalone.log"
+
+
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--self-test":
         with Path(sys.argv[2]).with_suffix(".log").open("w", encoding="utf-8") as log:
@@ -101,7 +109,22 @@ def main():
     icon = Path(chemotion_sample_manager.__file__).resolve().parent / "assets" / "icon.png"
     if icon.is_file():
         os.environ["CHEMOTION_SAMPLE_MANAGER_ICON"] = str(icon)
-    launch_app()
+    log_path = standalone_log_path()
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log = log_path.open("a", encoding="utf-8")
+    except OSError:
+        # Log access should not prevent the standalone app from opening.
+        launch_app()
+        return
+
+    with log:
+        print(f"Starting {APP_NAME} standalone.", file=log, flush=True)
+        try:
+            launch_app()
+        except Exception:
+            traceback.print_exc(file=log)
+            raise
 
 
 if __name__ == "__main__":
