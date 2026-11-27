@@ -53,6 +53,23 @@ def test_install_once_and_update_when_project_configuration_changes(tmp_path, mo
     assert not any("venv" in cmd for cmd in commands)
 
 
+def test_windows_setup_reports_progress_to_the_console(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(bootstrap.sys, "platform", "win32")
+    root, state, commands = fake_setup(tmp_path, monkeypatch)
+    log = StringIO()
+
+    bootstrap.prepare_environment(root, state, log)
+
+    console = capsys.readouterr().out
+    assert "Creating the private Python environment" in console
+    assert "Installing project dependencies" in console
+    assert "Setup complete." in console
+    assert console == log.getvalue()
+
+    bootstrap.prepare_environment(root, state, StringIO())
+    assert capsys.readouterr().out == ""
+
+
 def test_failed_install_does_not_mark_environment_as_ready(tmp_path, monkeypatch):
     root, state, commands = fake_setup(tmp_path, monkeypatch)
     successful_run = bootstrap.subprocess.run

@@ -30,6 +30,12 @@ def environment_directory(project_root, state_root):
     return state_root / "Environments" / f"{project_key}-{python_tag}"
 
 
+def report_setup(message, log):
+    print(message, file=log, flush=True)
+    if sys.platform == "win32":
+        print(message, flush=True)
+
+
 def ensure_libmagic(python, log):
     """Repair the platform's native libmagic dependency when needed."""
     if sys.platform == "win32":
@@ -44,8 +50,7 @@ def ensure_libmagic(python, log):
             pass
         # chemotion-api installs python-magic over python-magic-bin's shared
         # module. Restore the Windows binding, which uses its bundled DLL/database.
-        log.write("Repairing the Windows libmagic binding…\n")
-        log.flush()
+        report_setup("Repairing the Windows libmagic binding...", log)
         subprocess.run([str(python), "-m", "pip", "install", "--disable-pip-version-check",
                         "--force-reinstall", "--no-deps", "python-magic-bin==0.4.14"],
                        stdout=log, stderr=subprocess.STDOUT, check=True)
@@ -81,8 +86,7 @@ def prepare_environment(project_root, state_root, log):
 
     if created:
         environment.parent.mkdir(parents=True, exist_ok=True)
-        log.write("Creating the private Python environment…\n")
-        log.flush()
+        report_setup("Creating the private Python environment...", log)
         subprocess.run([sys.executable, "-m", "venv", str(environment)],
                        stdout=log, stderr=subprocess.STDOUT, check=True)
 
@@ -96,8 +100,7 @@ def prepare_environment(project_root, state_root, log):
         needs_install = repair
 
     if needs_install:
-        log.write("Installing project dependencies…\n")
-        log.flush()
+        report_setup("Installing project dependencies. This may take a few minutes...", log)
         command = [str(python), "-m", "pip", "install", "--disable-pip-version-check"]
         if repair:
             command.append("--force-reinstall")
@@ -107,8 +110,7 @@ def prepare_environment(project_root, state_root, log):
         subprocess.run([str(python), "-c", RUNTIME_CHECK],
                        stdout=log, stderr=subprocess.STDOUT, check=True)
         marker.write_text(current_hash + "\n", encoding="utf-8")
-        log.write("Setup complete.\n")
-        log.flush()
+        report_setup("Setup complete.", log)
     return python
 
 
