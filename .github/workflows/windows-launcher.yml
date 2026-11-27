@@ -1,0 +1,60 @@
+name: Source-linked Windows launcher
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-launcher.yml'
+      - 'scripts/build_windows_launcher.ps1'
+      - 'scripts/windows-launcher.cs'
+      - 'launchers/windows/**'
+      - 'src/chemotion_sample_manager/bootstrap.py'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          architecture: x64
+      - name: Build the source-linked launcher
+        shell: pwsh
+        run: ./scripts/build_windows_launcher.ps1
+      - name: Verify the executable and run setup without opening the app
+        shell: pwsh
+        run: |
+          $exe = 'launchers/windows/Chemotion Sample Manager.exe'
+          $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exe).Path)
+          $pe = [BitConverter]::ToInt32($bytes, 60)
+          if ([BitConverter]::ToUInt32($bytes, $pe) -ne 0x4550 -or
+              [BitConverter]::ToUInt16($bytes, $pe + 4) -ne 0x8664 -or
+              [BitConverter]::ToUInt16($bytes, $pe + 92) -ne 2) {
+            throw 'The launcher is not a Windows x64 GUI executable.'
+          }
+
+          $project = Join-Path $env:RUNNER_TEMP 'Chemotion launcher smoke test'
+          New-Item -ItemType Directory -Path $project | Out-Null
+          Copy-Item -Path launchers, src, pyproject.toml, README.md, LICENSE, MANIFEST.in -Destination $project -Recurse
+          $env:LOCALAPPDATA = Join-Path $project 'test profile'
+          $env:APPDATA = $env:LOCALAPPDATA
+          $log = Join-Path $project 'logs/launcher.log'
+          $process = Start-Process -FilePath (Join-Path $project $exe) -ArgumentList '--setup-only' -Wait -PassThru
+          if (Test-Path -LiteralPath $log) {
+            Get-Content -LiteralPath $log
+          }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $log) -or
+              -not (Select-String -LiteralPath $log -SimpleMatch 'Setup complete.')) {
+            throw "The source-linked launcher setup check failed with exit code $($process.ExitCode)."
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chemotion-sample-manager-source-launcher-windows-x64
+          path: launchers/windows/Chemotion Sample Manager.exe
+          if-no-files-found: error

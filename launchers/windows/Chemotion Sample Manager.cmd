@@ -12,7 +12,7 @@ if not exist "%BOOTSTRAP%" (
 
 rem Keep the console available during automatic first-time setup. The bootstrap
 rem starts the installed environment's pythonw.exe once setup has completed.
-where py >nul 2>nul
+py -3.14 -c "import sys" >nul 2>nul
 if not errorlevel 1 (
     py -3.14 "%BOOTSTRAP%" %*
     if errorlevel 1 goto :launch_failed
@@ -34,5 +34,5 @@ echo Select "Add python.exe to PATH" and keep "tcl/tk and IDLE" selected.
 echo.
 echo Chemotion Sample Manager could not start. Review the message above.
 if exist "%PROJECT_DIR%logs\launcher.log" echo Startup log: "%PROJECT_DIR%logs\launcher.log"
-pause
+if not "%~1"=="--setup-only" pause
 exit /b 1
